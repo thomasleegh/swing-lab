@@ -324,6 +324,28 @@ await test('"You" is the same rig as the ideal: identical at address, same feet,
   await p.context().close();
 });
 
+await test('position carousel: arrows and dots step through the 9 positions; planes toggle on and off', async () => {
+  const p = await newPage(); await upload(p);
+  assert((await p.$$('#phaseChips button')).length === 9, 'dots');
+  await p.click('#phaseChips button[data-id="address"]');
+  assert((await p.textContent('#phName')) === 'Address');
+  assert(await p.isDisabled('#phPrev'), 'prev should be disabled at address');
+  await p.click('#phNext'); assert((await p.textContent('#phName')) === 'Takeaway', await p.textContent('#phName'));
+  await p.click('#phNext'); await p.click('#phNext'); assert((await p.textContent('#phName')) === 'Top');
+  await p.click('#phPrev'); assert((await p.textContent('#phName')) === 'Lead arm parallel');
+  await p.click('#phaseChips button[data-id="finish"]'); assert(await p.isDisabled('#phNext'), 'next should be disabled at finish');
+  const h = await p.evaluate(() => document.querySelector('.pcar').getBoundingClientRect().height);
+  assert(h <= 64, 'carousel too tall: ' + h);
+  const on = await inkPixels(p, '#cvDtl');
+  await p.click('#planes');
+  const off = await inkPixels(p, '#cvDtl');
+  assert(off < on, `planes did not disappear (${on} → ${off})`);
+  await p.reload(); await p.waitForFunction(() => window.__swinglab?.state?.res, null, { timeout: 10000 });
+  assert(!(await p.isChecked('#planes')), 'planes setting not remembered');
+  await p.click('#planes'); assert(await p.isChecked('#planes'));
+  await p.context().close();
+});
+
 await test('a non-video file is refused with a message', async () => {
   const p = await newPage();
   await pick(p, '#addEmpty', notVideo);

@@ -318,7 +318,7 @@ function render() {
   const qGhost = state.ghost ? ghostAt(state.t) : null;
   const s = {
     q: { you: qYou, ideal: qIdeal, ghost: qGhost }, paths: state.paths, t: state.t, show: state.show, trace: state.trace,
-    ball: state.ball, addr: state.addr, mirror: state.mirror, leadAnkleX: state.leadAnkleX, ballGone: state.t > r.phases.impact + 0.02,
+    planes: state.planes, ball: state.ball, addr: state.addr, mirror: state.mirror, leadAnkleX: state.leadAnkleX, ballGone: state.t > r.phases.impact + 0.02,
     lead: { ideal: leadPct(qIdeal), you: r.view === 'faceon' ? leadPct(qYou) : null },
   };
   drawView($('cvDtl'), 'dtl', s);
@@ -332,7 +332,8 @@ function render() {
   for (const e of document.querySelectorAll('input.pos')) e.value = v;
   for (const e of document.querySelectorAll('.vph')) e.textContent = PHASE_NAMES[ph];
   for (const b of document.querySelectorAll('#phaseChips button')) b.setAttribute('aria-pressed', b.dataset.id === ph ? 'true' : 'false');
-  if (ph !== render._ph) { render._ph = ph; const b = document.querySelector(`#phaseChips button[data-id="${ph}"]`), box = $('phaseChips'); if (b && box) box.scrollTo({ left: b.offsetLeft - box.clientWidth / 2 + b.offsetWidth / 2, behavior: state.playing ? 'auto' : 'smooth' }); }
+  $('phName').textContent = PHASE_NAMES[ph];
+  const ids = Core.PH; $('phPrev').disabled = ph === ids[0] && state.t <= r.phases[ids[0]] + 1e-3; $('phNext').disabled = ph === ids[ids.length - 1] && state.t >= r.phases[ids[ids.length - 1]] - 1e-3;
 }
 
 function renderSwingChips() {
@@ -346,7 +347,16 @@ function renderSwingChips() {
 }
 function renderPhaseChips() {
   const box = $('phaseChips'); box.textContent = '';
-  for (const p of Rig.PHASES) box.append(el('button', { type: 'button', 'data-id': p.id, 'aria-pressed': 'false', onclick: () => { stopPlay(); state.t = state.res.phases[p.id]; render(); } }, p.name));
+  const fault = state.res.mainFault?.label !== 'No major fault' ? state.res.mainFault?.phase : null;
+  for (const p of Rig.PHASES) box.append(el('button', { type: 'button', 'data-id': p.id, 'aria-pressed': 'false', 'aria-label': p.name, title: p.name, class: p.id === fault ? 'flag' : '', onclick: () => goPhase(p.id) }, el('i')));
+}
+function goPhase(id) { stopPlay(); state.t = state.res.phases[id]; render(); }
+function stepPhase(d) {
+  const ids = Rig.PHASES.map((p) => p.id), cur = nearestPhase(state.t);
+  let i = ids.indexOf(cur);
+  // if we're between positions, the first step goes to the next one in that direction
+  if (d > 0 && state.t < state.res.phases[cur] - 1e-3) i -= 1; if (d < 0 && state.t > state.res.phases[cur] + 1e-3) i += 1;
+  goPhase(ids[Math.max(0, Math.min(ids.length - 1, i + d))]);
 }
 function renderTags() {
   const r = state.res, box = $('tags'); box.textContent = '';
@@ -408,7 +418,7 @@ function markupFor(r, phase, img) {
     const B = [r.ballPx[0] * sx, r.ballPx[1] * sy];
     const N = [(fa.lm[11][0] + fa.lm[12][0]) / 2 * W, (fa.lm[11][1] + fa.lm[12][1]) / 2 * H];
     const ext = (a, b, s) => [a[0] + (b[0] - a[0]) * s, a[1] + (b[1] - a[1]) * s];
-    m.lines.push({ a: B, b: ext(B, gA, 2.6), color: C.plane, dash: true }, { a: B, b: ext(B, N, 1.6), color: C.plane2, dash: true });
+    if (state.planes) m.lines.push({ a: B, b: ext(B, gA, 2.6), color: C.plane, dash: true }, { a: B, b: ext(B, N, 1.6), color: C.plane2, dash: true });
     const hipBackX = (lm) => { const xa = lm[23][0] * W, xb = lm[24][0] * W; return r.ballSide > 0 ? Math.min(xa, xb) - 0.11 * pxm : Math.max(xa, xb) + 0.11 * pxm; };
     const hipY = (lm) => (lm[23][1] + lm[24][1]) / 2 * H;
     if (phase === 'address' || phase === 'impact') {
@@ -518,6 +528,14 @@ for (const r of document.querySelectorAll('input.pos')) r.addEventListener('inpu
 for (const r of document.querySelectorAll('input[name=spd]')) r.addEventListener('change', (e) => { state.speed = +e.target.value; });
 for (const r of document.querySelectorAll('input[name=show]')) r.addEventListener('change', (e) => { state.show = e.target.value; render(); });
 $('trace').addEventListener('change', (e) => { state.trace = e.target.checked; render(); });
+$('planes').addEventListener('change', (e) => { state.planes = e.target.checked; LS.set('planes', state.planes ? '1' : '0'); render(); if (state.res) renderKeyframes(); });
+$('phPrev').addEventListener('click', () => stepPhase(-1));
+$('phNext').addEventListener('click', () => stepPhase(1));
+state.planes = LS.get('planes') !== '0'; $('planes').checked = state.planes;
+// swipe the position carousel left/right to step
+{ let x0 = null; const box = document.querySelector('.pcar');
+  box.addEventListener('touchstart', (e) => { x0 = e.touches[0].clientX; }, { passive: true });
+  box.addEventListener('touchend', (e) => { if (x0 == null) return; const dx = e.changedTouches[0].clientX - x0; if (Math.abs(dx) > 40) stepPhase(dx < 0 ? 1 : -1); x0 = null; }, { passive: true }); }
 $('reanalyze').addEventListener('click', () => { if (state.cur) { stopPlay(); stopCompare(false); processSession(state.cur.id); window.scrollTo({ top: 0, behavior: 'smooth' }); } });
 $('dlgClose').addEventListener('click', () => $('dlg').close());
 $('dlg').addEventListener('click', (e) => { if (e.target === $('dlg')) $('dlg').close(); });

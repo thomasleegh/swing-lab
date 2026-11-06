@@ -1,7 +1,7 @@
 // App shell: network-first so redeploys show up on the next open; cache is the offline fallback.
 // Pose model + MediaPipe runtime: cache-first (large and versioned by path), so they download once.
 // Bump CACHE whenever you ship so installed copies refresh (the page reloads itself once).
-const CACHE = "swinglab-v7";
+const CACHE = "swinglab-v8";
 const BIG = "swinglab-models-v1";
 const SHELL = ["./", "index.html", "manifest.json", "js/app.js", "js/core.js", "js/rig.js", "js/render.js", "js/store.js", "js/tracker.js", "icon-192.png", "icon-512.png", "apple-touch-icon.png"];
 self.addEventListener("install", (e) => { e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL))); self.skipWaiting(); });

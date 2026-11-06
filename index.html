@@ -98,6 +98,15 @@ main{max-width:1080px;margin:0 auto;padding:6px max(16px,env(safe-area-inset-rig
 .pill{font-family:var(--f-mono);font-size:11px;padding:4px 8px;border-radius:6px;white-space:nowrap}
 .pill.good{background:var(--goodbg);color:var(--good)} .pill.warn{background:var(--warnbg);color:var(--warn)} .pill.bad{background:var(--badbg);color:var(--bad)} .pill.info{background:var(--chip);color:var(--muted)}
 .ctrl{padding:12px;display:grid;gap:10px}
+.pcar{display:flex;align-items:center;gap:6px}
+.pnav{width:44px;min-height:44px;padding:0;flex:none}
+.pmid{flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;gap:2px}
+.pmid b{font-family:var(--f-display);font-size:22px;font-weight:700;line-height:1.1;white-space:nowrap}
+.pdots{display:flex;justify-content:center}
+.pdots button{width:26px;min-height:36px;height:36px;padding:0;background:none;border:0;border-radius:6px}
+.pdots button i{display:block;width:8px;height:8px;border-radius:50%;background:var(--line);margin:auto;transition:transform .15s}
+.pdots button[aria-pressed=true] i{background:var(--ink);transform:scale(1.35)}
+.pdots button.flag i{background:var(--you)}
 .ctrl .row{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px}
 #play{min-width:84px;background:var(--ink);color:var(--panel);border-color:var(--ink)}
 .seg{display:inline-flex}
@@ -215,8 +224,13 @@ dialog::backdrop{background:var(--scrim)}
             </span>
           </span>
           <label class="chk"><input type="checkbox" id="trace" checked>Clubhead path</label>
+          <label class="chk"><input type="checkbox" id="planes" checked>Planes</label>
         </div>
-        <div class="chips" id="phaseChips" aria-label="Swing positions"></div>
+        <div class="pcar" aria-label="Swing positions">
+          <button type="button" class="pnav" id="phPrev" aria-label="Previous position"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M15 6l-6 6 6 6"/></svg></button>
+          <div class="pmid"><b id="phName">Address</b><div class="pdots" id="phaseChips"></div></div>
+          <button type="button" class="pnav" id="phNext" aria-label="Next position"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg></button>
+        </div>
       </section>
       <div class="views">
         <figure>

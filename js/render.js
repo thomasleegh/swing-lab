@@ -109,12 +109,14 @@ export function drawView(canvas, id, s) {
   if (!s.ballGone) { ctx.save(); ctx.fillStyle = C.ink; ctx.globalAlpha = 0.85; ctx.beginPath(); ctx.arc(ballP[0], ballP[1] - k * 0.006, k * 0.022, 0, Math.PI * 2); ctx.fill(); ctx.restore(); }
   if (id === 'dtl') {
     const hands = P(s.addr.hands), neck = P(s.addr.neck);
-    dashLine(ctx, ballP, extend(ballP, hands, 3.2), C.plane, k * 0.008);
-    dashLine(ctx, ballP, extend(ballP, neck, 1.75), C.plane2, k * 0.008);
-    const al = s.mirror.bs > 0 ? 'right' : 'left', off = s.mirror.bs > 0 ? -k * 0.03 : k * 0.03;
-    const a = extend(ballP, hands, 2.15), b = extend(ballP, neck, 1.7);
-    label(ctx, 'shaft plane', a[0] + off, a[1] - k * 0.01, C.plane, k, al);
-    label(ctx, 'shoulder plane', b[0] + off, b[1] + k * 0.02, C.plane2, k, al);
+    if (s.planes !== false) {
+      dashLine(ctx, ballP, extend(ballP, hands, 3.2), C.plane, k * 0.008);
+      dashLine(ctx, ballP, extend(ballP, neck, 1.75), C.plane2, k * 0.008);
+      const al = s.mirror.bs > 0 ? 'right' : 'left', off = s.mirror.bs > 0 ? -k * 0.03 : k * 0.03;
+      const a = extend(ballP, hands, 2.15), b = extend(ballP, neck, 1.7);
+      label(ctx, 'shaft plane', a[0] + off, a[1] - k * 0.01, C.plane, k, al);
+      label(ctx, 'shoulder plane', b[0] + off, b[1] + k * 0.02, C.plane2, k, al);
+    }
     label(ctx, 'ball', ballP[0], ballP[1] + k * 0.07, C.muted, k, 'center');
   } else {
     label(ctx, s.mirror.ts > 0 ? 'target →' : '← target', s.mirror.ts > 0 ? W - k * 0.06 : k * 0.06, H * 0.9 + k * 0.08, C.muted, k, s.mirror.ts > 0 ? 'right' : 'left');
