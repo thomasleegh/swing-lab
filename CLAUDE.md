@@ -52,6 +52,9 @@ He swings left-handed. Proposal "A" (side drawer library) was the chosen UI.
 - iPhone (Nov 6): swings found but every swing failed analysis, reason hidden ("not tracked clearly enough").
   Now: frames without 3D points are rebuilt from 2D (`worldFrom2D`, depth flattened), and per-swing failure
   reasons + frame counts + tracker/UA show under "Details for Claude" on the banner (copyable).
+- Far (lead) leg wobbled and the shins crossed (Nov 6, lefty down the line): `stabilize()` = median-5 + visibility-
+  weighted zero-phase Gaussian (legs strong, hands light), feet pinned (lead → finish, trail → impact), knees
+  rebuilt from fixed thigh/shin lengths and forced to bend toward the ball. Leg jitter down ~60–90%, metrics unchanged.
 - Safari copies canvas-to-canvas lazily: each head gets its own scratch canvas (else heads show another view's face).
 
 ## Working style (user: Thomas)

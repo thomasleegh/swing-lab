@@ -202,7 +202,9 @@ function analyzeSwing(sw, meta) {
     }
     return o;
   });
-  // ground the figure: lowest ankle at address = 0.08
+  const visOf = (f) => { const v = (i) => f.lm[i][3] ?? 1; const g = Math.max(v(15), v(16));
+    return { lSh: v(L.sh), tSh: v(Tr.sh), lElb: v(L.el), tElb: v(Tr.el), lWr: v(L.wr), tWr: v(Tr.wr), H: g, lHip: v(L.hip), tHip: v(Tr.hip), lKnee: v(L.kn), tKnee: v(Tr.kn), lAnk: v(L.an), tAnk: v(Tr.an), lToe: v(L.toe), tToe: v(Tr.toe), ear: Math.max(v(7), v(8)), nose: v(0) }; };
+  stabilize(joints, raw.map(visOf), idx, T);
   // --- club: image angle path, then 3D
   const ballImgAngle = (() => { // shaft angle from grip to the ball, from the address frames
     return null;
@@ -261,6 +263,59 @@ function round2(x) { return Math.round(x * 100) / 100; }
 function roundJoints(j) { const o = {}; for (const k in j) o[k] = j[k].map((x) => Math.round(x * 1000) / 1000); return o; }
 function nearestIdx(T, t) { let b = 0; for (let i = 1; i < T.length; i++) if (Math.abs(T[i] - t) < Math.abs(T[b] - t)) b = i; return b; }
 function argmax(a, i0, i1) { let b = i0; for (let i = i0; i <= i1; i++) if (isFinite(a[i]) && !(a[i] <= a[b])) b = i; return b; }
+// ---------- skeleton stabilisation ----------
+// Joints hidden behind the body (e.g. the far leg down the line) jump around. Three steps:
+// 1) median filter to drop one-frame spikes, 2) zero-phase Gaussian smoothing weighted by how visible each joint
+// was (hidden frames lean on their neighbours), strong for legs/hips, light for hands so fast motion stays sharp,
+// 3) feet planted (lead foot address→finish, trail foot address→impact) and knees rebuilt from fixed thigh/shin
+// lengths so the legs can't stretch or wobble.
+const SIGMA = { lHip: 3, tHip: 3, lKnee: 3.5, tKnee: 3.5, lAnk: 3.5, tAnk: 3.5, lToe: 3.5, tToe: 3.5, lSh: 2, tSh: 2, ear: 2, nose: 2, lElb: 1.5, tElb: 1.5, lWr: 1, tWr: 1, H: 1 };
+function stabilize(J, vis, idx, T) {
+  const n = J.length, keys = Object.keys(J[0]);
+  for (const k of keys) {
+    const sig = SIGMA[k] || 1.5, rad = Math.ceil(sig * 2.5);
+    // 1) median of 5 (legs/torso only; hands move too fast for it)
+    if (sig >= 2) {
+      const src = J.map((o) => o[k].slice());
+      for (let i = 0; i < n; i++) for (let a = 0; a < 3; a++) {
+        const w = []; for (let d = -2; d <= 2; d++) w.push(src[Math.max(0, Math.min(n - 1, i + d))][a]);
+        w.sort((x, y) => x - y); J[i][k][a] = w[2];
+      }
+    }
+    // 2) visibility-weighted Gaussian
+    const src = J.map((o) => o[k].slice());
+    for (let i = 0; i < n; i++) {
+      const acc = [0, 0, 0]; let ws = 0;
+      for (let d = -rad; d <= rad; d++) {
+        const j = i + d; if (j < 0 || j >= n) continue;
+        const w = Math.exp(-(d * d) / (2 * sig * sig)) * (0.15 + Math.min(1, vis[j][k] ?? 1));
+        acc[0] += src[j][0] * w; acc[1] += src[j][1] * w; acc[2] += src[j][2] * w; ws += w;
+      }
+      J[i][k] = [acc[0] / ws, acc[1] / ws, acc[2] / ws];
+    }
+  }
+  // 3) planted feet
+  const medianPt = (k, a, b) => [0, 1, 2].map((ax) => median(J.slice(a, b + 1).map((o) => o[k][ax])));
+  const pin = (k, until, blend) => {
+    const p = medianPt(k, idx.address, until);
+    for (let i = 0; i < n; i++) {
+      const u = i <= until ? 1 : Math.max(0, 1 - (T[i] - T[until]) / blend);
+      if (u > 0) J[i][k] = lerp3(J[i][k], p, u);
+    }
+  };
+  pin('lAnk', idx.finish, 0.3); pin('lToe', idx.finish, 0.3);
+  pin('tAnk', idx.impact, 0.25); pin('tToe', idx.impact, 0.25);
+  // 4) knees from fixed segment lengths, bending the way the tracked knee points
+  for (const [hip, knee, ank] of [['lHip', 'lKnee', 'lAnk'], ['tHip', 'tKnee', 'tAnk']]) {
+    const thigh = median(J.map((o) => V.len(V.sub(o[hip], o[knee])))), shin = median(J.map((o) => V.len(V.sub(o[knee], o[ank]))));
+    for (let i = 0; i < n; i++) {
+      const o = J[i], mid = V.mul(V.add(o[hip], o[ank]), 0.5);
+      // knees bend forward (toward the ball, +Z); the tracked knee only sets how far sideways
+      let pole = V.sub(o[knee], mid); pole = [pole[0], 0, Math.max(0.05, Math.abs(pole[2])) + 0.08];
+      o[knee] = R.ik(o[hip], o[ank], thigh, shin, pole);
+    }
+  }
+}
 function smoothAxis(rel, ax, r) {
   const keys = Object.keys(rel[0]), n = rel.length;
   const src = rel.map((o) => { const c = {}; for (const k of keys) c[k] = o[k][ax]; return c; });
