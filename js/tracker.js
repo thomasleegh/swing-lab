@@ -17,6 +17,17 @@ export async function getLandmarker(base = '.') {
   throw lastErr || new Error('Pose model failed to load');
 }
 export function delegateInUse() { return landmarkerDelegate; }
+// If the GPU path fails mid-run on some phone, rebuild on the CPU once and carry on.
+async function detectSafe(c, base) {
+  try { return landmarker.detect(c); }
+  catch (e) {
+    if (landmarkerDelegate !== 'GPU') throw e;
+    try { landmarker.close && landmarker.close(); } catch (x) {}
+    landmarker = null; globalThis.__FORCE_CPU = true;
+    await getLandmarker(base);
+    return landmarker.detect(c);
+  }
+}
 
 // Seek and wait until the new frame is actually presented (paused seeks can otherwise hand back the old frame).
 function seek(v, t) {
@@ -141,7 +152,7 @@ export async function trackVideo(url, { onProgress = () => {}, base = '.', findS
       const t = i / COARSE_FPS;
       await seek(v, t); ctx.drawImage(v, 0, 0, W, H);
       sigs.add(frameSig(ctx, W, H));
-      const { lm } = landmarkArrays(pl.detect(c));
+      const { lm } = landmarkArrays(await detectSafe(c, base));
       coarse.push({ t: round(t, 3), lm });
       if (i % 5 === 0) report('scan', 0.35 * i / Math.max(1, nCoarse), { found: null });
     }
@@ -159,7 +170,7 @@ export async function trackVideo(url, { onProgress = () => {}, base = '.', findS
         if (isCancelled()) throw new Error('cancelled');
         const t = w.t0 + i / FINE_FPS;
         await seek(v, t); ctx.drawImage(v, 0, 0, W, H);
-        const { lm, wl } = landmarkArrays(pl.detect(c));
+        const { lm, wl } = landmarkArrays(await detectSafe(c, base));
         const sc = lm ? clubScores(toGray(ctx, W, H), W, H, lm) : new Float32Array(NANG);
         frames.push({ t: round(t, 4), lm, wl, sc: Array.from(sc, (x) => Math.round(x * 10) / 10) });
         doneFine++;
