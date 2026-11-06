@@ -259,6 +259,31 @@ await test('face-on upload: tracked face-on view, your lead-foot bar, reconstruc
   await p.context().close();
 });
 
+await test('phone returns 2D body points without 3D: swings still analyze (iPhone regression)', async () => {
+  const p = await newPage();
+  await p.evaluate(() => { globalThis.__SWINGLAB_TEST.no3d = true; });
+  await upload(p);
+  const st = await p.evaluate(() => ({ status: window.__swinglab.state.cur.status, n: window.__swinglab.state.cur.swings.length, d: window.__swinglab.state.cur.diag }));
+  assert(st.status === 'done' && st.n === 2, JSON.stringify(st));
+  assert(st.d && st.d.with3D === 0 && st.d.withBody > 100, 'diag ' + JSON.stringify(st.d));
+  assert(await p.isVisible('#session'));
+  await p.context().close();
+});
+
+await test('when no swing survives analysis, the banner shows copyable details with the reason', async () => {
+  const p = await newPage();
+  await p.evaluate(() => { const orig = window.Core.analyzeSwing; window.Core.analyzeSwing = () => { throw new TypeError('boom in analysis'); }; window.__restore = () => { window.Core.analyzeSwing = orig; }; });
+  await upload(p);
+  assert(await p.isVisible('text=No full swings found in this video.'));
+  await p.click('text=Details for Claude');
+  const t = await p.textContent('#status pre');
+  assert(/Swing 1: TypeError: boom in analysis/.test(t) && /with body/.test(t), t);
+  await p.evaluate(() => window.__restore());
+  await p.click('text=Analyze again');
+  await p.waitForFunction(() => window.__swinglab.state.cur.status === 'done' && window.__swinglab.state.cur.swings.length === 2, null, { timeout: 30000 });
+  await p.context().close();
+});
+
 await test('a non-video file is refused with a message', async () => {
   const p = await newPage();
   await pick(p, '#addEmpty', notVideo);

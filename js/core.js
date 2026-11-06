@@ -88,8 +88,12 @@ function clubPath(frames, hint) {
 
 // ---------- 3. full analysis of one swing ----------
 function analyzeSwing(sw, meta) {
-  const raw = sw.frames.filter((f) => f.lm && f.wl);
-  if (raw.length < 20) return { ok: false, reason: 'Not enough frames with you in view.' };
+  // Some phones return the 2D body points without the 3D ones: rebuild 3D from 2D (depth flattened) so the
+  // swing can still be analysed. In-plane positions come from 2D anyway; only depth is lost.
+  const withLm = sw.frames.filter((f) => f.lm), withWl = withLm.filter((f) => f.wl && f.wl.length === 33);
+  const flat = withWl.length < withLm.length * 0.5;
+  const raw = withLm.map((f) => (f.wl && f.wl.length === 33 && !flat) ? f : { ...f, wl: worldFrom2D(f.lm, meta.W, meta.H) }).filter((f) => f.wl);
+  if (raw.length < 20) return { ok: false, reason: `Only ${raw.length} of ${sw.frames.length} frames had you in view.` };
   const W = meta.W, H = meta.H;
   const T = raw.map((f) => f.t);
   // --- view & orientation from a still frame near the start
@@ -237,7 +241,7 @@ function analyzeSwing(sw, meta) {
   const out = raw.map((f, i) => ({ t: T[i], j: roundJoints(joints[i]), club: club[i], lm: f.lm }));
   const res = {
     ok: true, view, handed, ballSide, targetSide, phases, idx, pxPerM, stature: round2(stature),
-    ballPx, imgW: W, imgH: H, frames: out, approx: !!phases._approx,
+    ballPx, imgW: W, imgH: H, frames: out, approx: !!phases._approx, depthFlat: flat,
   };
   delete phases._approx;
   res.metrics = measure(res);
@@ -246,6 +250,13 @@ function analyzeSwing(sw, meta) {
   return res;
 }
 
+function worldFrom2D(lm, W, H) {
+  if (!lm || lm.length < 33) return null;
+  const hx = (lm[23][0] + lm[24][0]) / 2 * W, hy = (lm[23][1] + lm[24][1]) / 2 * H;
+  const sh = [(lm[11][0] + lm[12][0]) / 2 * W, (lm[11][1] + lm[12][1]) / 2 * H], an = [(lm[27][0] + lm[28][0]) / 2 * W, (lm[27][1] + lm[28][1]) / 2 * H];
+  const s = Math.max(50, Math.hypot(sh[0] - an[0], sh[1] - an[1])) / 1.25;   // px per metre (shoulders to ankles ~1.25 m)
+  return lm.map((p) => [(p[0] * W - hx) / s, (p[1] * H - hy) / s, (p[2] || 0) * W / s, p[3]]);
+}
 function round2(x) { return Math.round(x * 100) / 100; }
 function roundJoints(j) { const o = {}; for (const k in j) o[k] = j[k].map((x) => Math.round(x * 1000) / 1000); return o; }
 function nearestIdx(T, t) { let b = 0; for (let i = 1; i < T.length; i++) if (Math.abs(T[i] - t) < Math.abs(T[b] - t)) b = i; return b; }

@@ -36,7 +36,7 @@ He swings left-handed. Proposal "A" (side drawer library) was the chosen UI.
 5. **Never commit swing videos or tracking dumps** (public repo). `.gitignore` blocks video files and `fixtures/`.
 
 ## Tests
-- `node scripts/e2e.mjs` — 17 checks with a mock tracker (`scripts/mock-tracker.js` builds MediaPipe-shaped data
+- `node scripts/e2e.mjs` — 19 checks with a mock tracker (`scripts/mock-tracker.js` builds MediaPipe-shaped data
   from the rig: lefty/righty, down-the-line/face-on, no-swing, error, slow).
 - `node scripts/realrun.mjs <clip.webm> <outdir> [second.webm]` — the whole app on a real clip (local only).
 - `node scripts/track.mjs <clip> <out.json>` + `node scripts/analyze.js <out.json>` — tracker + core on real clips.
@@ -49,6 +49,9 @@ He swings left-handed. Proposal "A" (side drawer library) was the chosen UI.
 - Seeked frame not presented yet → stale pixels. `seek()` waits for `requestVideoFrameCallback` (fallback: seeked+120 ms).
 - Shaft detector locked onto the forearm/body edges → forearms masked + forearm-direction prior.
 - Spine/hips/hands numbers were off from 3D depth noise → in-plane values from 2D landmarks.
+- iPhone (Nov 6): swings found but every swing failed analysis, reason hidden ("not tracked clearly enough").
+  Now: frames without 3D points are rebuilt from 2D (`worldFrom2D`, depth flattened), and per-swing failure
+  reasons + frame counts + tracker/UA show under "Details for Claude" on the banner (copyable).
 - Safari copies canvas-to-canvas lazily: each head gets its own scratch canvas (else heads show another view's face).
 
 ## Working style (user: Thomas)

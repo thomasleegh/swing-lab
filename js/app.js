@@ -132,6 +132,19 @@ function showSession(s) {
   else $('session').hidden = true;
 }
 
+function diagText(s) {
+  const d = s.diag || {};
+  const lines = [`Found ${d.found ?? '?'} swing(s) · frames ${d.frames ?? '?'} · with body ${d.withBody ?? '?'} · with 3D ${d.with3D ?? '?'}`,
+    `Tracker ${d.delegate || '?'} · video ${d.video || '?'} → ${d.processed || '?'} · ${d.duration ?? '?'} s`, ...(d.failures || []), s.error ? `Error: ${s.error}` : null, d.ua || navigator.userAgent.slice(0, 120)];
+  return lines.filter(Boolean).join('\n');
+}
+function diagBox(s) {
+  if (!s.diag && !s.error) return null;
+  const pre = el('pre', { style: 'white-space:pre-wrap;font:12px/1.4 var(--f-mono);margin:6px 0 0;color:var(--muted);user-select:text;-webkit-user-select:text' }, diagText(s));
+  const det = el('details', {}, el('summary', { style: 'cursor:pointer;font-weight:600;min-height:36px;display:flex;align-items:center' }, 'Details for Claude'), pre,
+    el('button', { type: 'button', style: 'margin-top:8px', onclick: async (e) => { try { await navigator.clipboard.writeText(diagText(s)); toast('Copied'); } catch (x) { const r = document.createRange(); r.selectNodeContents(pre); const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r); toast('Selected. Tap Copy.'); } } }, 'Copy details'));
+  return det;
+}
 function renderStatus(s) {
   const box = $('status'); box.textContent = ''; box.className = 'card banner';
   if (s.status === 'done') {
@@ -139,7 +152,7 @@ function renderStatus(s) {
       box.hidden = false; box.classList.add('err');
       box.append(el('b', {}, 'No full swings found in this video.'),
         el('span', {}, s.note || 'Make sure your whole body and the club are in the frame, filmed down the line or face-on, with the swing at normal speed.'),
-        el('div', { class: 'row' }, el('button', { type: 'button', onclick: () => processSession(s.id) }, 'Analyze again')));
+        el('div', { class: 'row' }, el('button', { type: 'button', onclick: () => processSession(s.id) }, 'Analyze again')), diagBox(s));
     } else box.hidden = true;
     return;
   }
@@ -160,7 +173,7 @@ function renderStatus(s) {
   if (s.status === 'error') {
     box.classList.add('err');
     box.append(el('b', {}, 'Could not analyze this video.'), el('span', {}, s.error || 'Unknown error.'),
-      el('div', { class: 'row' }, el('button', { type: 'button', class: 'btn-dark', onclick: () => processSession(s.id) }, 'Try again')));
+      el('div', { class: 'row' }, el('button', { type: 'button', class: 'btn-dark', onclick: () => processSession(s.id) }, 'Try again')), diagBox(s));
   }
 }
 
@@ -192,12 +205,15 @@ async function processSession(id) {
     url = URL.createObjectURL(blob);
     const { trackVideo, grabFrames } = TEST.tracker || await import('./tracker.js');
     const tr = await trackVideo(url, { findSwings: Core.findSwings, onProgress: update, isCancelled: () => !state.processing || state.processing.id !== id });
-    const swings = [];
-    for (const sw of tr.swings) {
+    const swings = [], failures = [];
+    tr.swings.forEach((sw, i) => {
       let a;
-      try { a = Core.analyzeSwing(sw, tr.meta); } catch (e) { a = { ok: false, reason: String(e.message || e) }; }
-      if (a.ok) swings.push(slim(a));
-    }
+      try { a = Core.analyzeSwing(sw, tr.meta); } catch (e) { a = { ok: false, reason: `${e.name || 'Error'}: ${e.message || e}${e.stack ? ' @ ' + String(e.stack).split('\n').slice(0, 2).join(' | ') : ''}` }; }
+      if (a.ok) swings.push(slim(a)); else failures.push(`Swing ${i + 1}: ${a.reason}`);
+    });
+    const diag = { delegate: tr.meta.delegate, video: `${tr.meta.vw}×${tr.meta.vh}`, processed: `${tr.meta.W}×${tr.meta.H}`, duration: Math.round(tr.meta.duration * 10) / 10,
+      found: tr.swings.length, frames: tr.swings.reduce((n, s) => n + s.frames.length, 0), withBody: tr.swings.reduce((n, s) => n + s.frames.filter((f) => f.lm).length, 0),
+      with3D: tr.swings.reduce((n, s) => n + s.frames.filter((f) => f.wl).length, 0), ua: navigator.userAgent.replace(/^Mozilla\/5\.0 /, '').slice(0, 120), failures };
     update({ stage: 'frames', frac: 0.96 });
     for (let s = 0; s < swings.length; s++) {
       const times = KEYFRAMES.map((k) => swings[s].phases[k]);
@@ -207,7 +223,7 @@ async function processSession(id) {
     }
     tr.video.remove();
     const summary = Core.summarize(swings);
-    Object.assign(rec, { status: 'done', progress: 1, progressText: 'Done', swings, summary, meta: { duration: tr.meta.duration, delegate: tr.meta.delegate, found: tr.swings.length }, note: tr.swings.length && !swings.length ? 'Swings were found but you were not tracked clearly enough. Try a brighter clip with your whole body in frame.' : null });
+    Object.assign(rec, { status: 'done', progress: 1, progressText: 'Done', swings, summary, diag, meta: { duration: tr.meta.duration, delegate: tr.meta.delegate, found: tr.swings.length }, note: tr.swings.length && !swings.length ? 'Swings were found but you were not tracked clearly enough. Try a brighter clip with your whole body in frame.' : null });
     delete thumbURLs[id];
     await store.putSession(rec);
     toast(swings.length ? `Analyzed ${swings.length} swing${swings.length > 1 ? 's' : ''}` : 'No full swings found');

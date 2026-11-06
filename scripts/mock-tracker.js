@@ -73,7 +73,7 @@
       const swings = [];
       for (let s = 0; s < windows.length; s++) {
         const w = windows[s], frames = [];
-        for (let t = w.t0; t <= w.t1 + 1e-6; t += 1 / FPS_F) { const d = landmarks(rigAt(t), mode); frames.push({ t: Math.round(t * 1e4) / 1e4, lm: d.lm, wl: d.wl, sc: d.sc }); }
+        for (let t = w.t0; t <= w.t1 + 1e-6; t += 1 / FPS_F) { const d = landmarks(rigAt(t), mode); frames.push({ t: Math.round(t * 1e4) / 1e4, lm: d.lm, wl: T.no3d ? null : d.wl, sc: d.sc }); }
         swings.push({ ...w, frames });
         onProgress({ stage: 'track', frac: 0.35 + 0.6 * (s + 1) / windows.length, found: windows.length, swing: s + 1 });
         if (mode === 'slow') await sleep(1500);
