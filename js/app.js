@@ -67,7 +67,7 @@ async function renderList() {
       const acts = el('div', { class: 'actions' });
       const canCompare = state.cur && state.cur.id !== s.id && state.cur.status === 'done' && s.status === 'done' && (s.summary?.count || 0) > 0 && (state.cur.summary?.count || 0) > 0;
       if (canCompare) acts.append(el('button', { type: 'button', onclick: () => { openDrawer(false); startCompare(s.id); } }, 'Compare with current'));
-      if (s.status === 'error' || s.status === 'interrupted') acts.append(el('button', { type: 'button', onclick: () => { openDrawer(false); openSession(s.id).then(() => processSession(s.id)); } }, 'Analyze again'));
+      if (s.status !== 'processing' && s.status !== 'queued') acts.append(el('button', { type: 'button', onclick: () => { state.openActions = null; openDrawer(false); openSession(s.id).then(() => processSession(s.id)); } }, 'Analyze again'));
       acts.append(el('button', { type: 'button', class: 'del', onclick: () => askDelete(s, acts) }, 'Delete'));
       wrap.append(acts);
     }
@@ -188,6 +188,9 @@ async function processSession(id) {
   if (state.processing) { if (state.processing.id !== id) toast('Another video is still being analyzed.'); return; }
   const rec = await store.getSession(id); if (!rec) return;
   state.processing = { id };
+  try { await store.deleteFrames(id); } catch (e) {}
+  for (const k of Object.keys(state.imgs)) if (k.startsWith(id + ':')) delete state.imgs[k];
+  delete thumbURLs[id];
   Object.assign(rec, { status: 'processing', progress: 0, progressText: 'Loading pose model…', error: null });
   await store.putSession(rec); await refresh(); if (state.cur?.id === id) { state.cur = rec; showSession(rec); }
   keepAwake(true);
@@ -516,6 +519,7 @@ for (const r of document.querySelectorAll('input.pos')) r.addEventListener('inpu
 for (const r of document.querySelectorAll('input[name=spd]')) r.addEventListener('change', (e) => { state.speed = +e.target.value; });
 for (const r of document.querySelectorAll('input[name=show]')) r.addEventListener('change', (e) => { state.show = e.target.value; render(); });
 $('trace').addEventListener('change', (e) => { state.trace = e.target.checked; render(); });
+$('reanalyze').addEventListener('click', () => { if (state.cur) { stopPlay(); stopCompare(false); processSession(state.cur.id); window.scrollTo({ top: 0, behavior: 'smooth' }); } });
 $('dlgClose').addEventListener('click', () => $('dlg').close());
 $('dlg').addEventListener('click', (e) => { if (e.target === $('dlg')) $('dlg').close(); });
 window.addEventListener('resize', () => { render(); if (state.res) renderKeyframes(); });

@@ -41,6 +41,7 @@ export const store = {
   putVideo: (id, blob) => tx('videos', 'readwrite', (s) => s.put(blob, id)),
   getFrame: (key) => tx('frames', 'readonly', (s) => s.get(key)),
   putFrame: (key, blob) => tx('frames', 'readwrite', (s) => s.put(blob, key)),
+  deleteFrames: (id) => tx('frames', 'readwrite', (s) => s.delete(IDBKeyRange.bound(`${id}:`, `${id}:\uffff`))),
   async deleteSession(id) {
     await tx('sessions', 'readwrite', (s) => s.delete(id));
     await tx('videos', 'readwrite', (s) => s.delete(id));

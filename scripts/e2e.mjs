@@ -284,6 +284,24 @@ await test('when no swing survives analysis, the banner shows copyable details w
   await p.context().close();
 });
 
+await test('a finished upload can be analyzed again from the ⋯ menu and from the session screen', async () => {
+  const p = await newPage(); await upload(p);
+  await p.click('#menuBtn'); await p.waitForTimeout(300);
+  await p.click('#list .more');
+  assert(await p.isVisible('#list .actions >> text=Analyze again'), 'no Analyze again in the menu');
+  await p.click('#list .actions >> text=Analyze again');
+  await p.waitForFunction(() => window.__swinglab.state.processing, null, { timeout: 5000 }).catch(() => {});
+  await p.waitForFunction(() => !window.__swinglab.state.processing && window.__swinglab.state.cur.status === 'done', null, { timeout: 30000 });
+  assert(await p.isVisible('#session'));
+  await p.waitForTimeout(300);
+  assert(await inkPixels(p, '#kf button canvas') > 500, 'keyframes missing after re-analysis');
+  await p.click('#reanalyze');
+  await p.waitForFunction(() => !window.__swinglab.state.processing && window.__swinglab.state.cur.status === 'done', null, { timeout: 30000 });
+  assert((await p.$$('#swingChips button')).length === 2);
+  assert(p.errors.length === 0, 'errors: ' + p.errors.join(' | '));
+  await p.context().close();
+});
+
 await test('a non-video file is refused with a message', async () => {
   const p = await newPage();
   await pick(p, '#addEmpty', notVideo);
