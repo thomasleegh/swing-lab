@@ -308,18 +308,19 @@ await test('"You" is the same rig as the ideal: identical at address, same feet,
     const st = window.__swinglab.state, res = st.res, C = window.Core;
     const a = C.youRigPose(res, st.keys, res.phases.address), b = C.idealPose(res.phases, res.phases.address, 1);
     let dAddr = 0; for (const k of ['H', 'neck', 'P', 'lAnk', 'tAnk', 'club']) for (let i = 0; i < 3; i++) dAddr = Math.max(dAddr, Math.abs(a[k][i] - b[k][i]));
-    let feet = 0, jerk = 0, prev = null, prev2 = null;
+    let feet = 0, jerk = 0, jerkI = 0, pv = [], pi = [];
+    const acc = (h, k) => Math.max(...[0, 1, 2].map((i) => Math.abs(h[2][k][i] - 2 * h[1][k][i] + h[0][k][i])));
     for (let t = res.phases.address; t <= res.phases.finish; t += 1 / 60) {
       const q = C.youRigPose(res, st.keys, t), qi = C.idealPose(res.phases, t, 1);
       feet = Math.max(feet, Math.abs(q.lAnk[2] - qi.lAnk[2]), Math.abs(q.lAnk[0] - qi.lAnk[0]));
-      if (prev2) for (let i = 0; i < 3; i++) jerk = Math.max(jerk, Math.abs(q.lKnee[i] - 2 * prev.lKnee[i] + prev2.lKnee[i]));
-      prev2 = prev; prev = q;
+      pv.push(q); pi.push(qi); if (pv.length > 3) { pv.shift(); pi.shift(); }
+      if (pv.length === 3) for (const k of ['lKnee', 'tKnee', 'H', 'head']) { jerk = Math.max(jerk, acc(pv, k)); jerkI = Math.max(jerkI, acc(pi, k)); }
     }
-    return { dAddr, feet, jerk };
+    return { dAddr, feet, jerk, jerkI };
   });
   assert(r.dAddr < 0.005, 'figures differ at address by ' + r.dAddr);
   assert(r.feet < 0.02, 'feet not on the same spot: ' + r.feet);
-  assert(r.jerk < 0.01, 'knee jitter ' + r.jerk);
+  assert(r.jerk <= r.jerkI * 2 + 0.002, `jerkier than the ideal model itself: ${r.jerk} vs ${r.jerkI}`);
   await p.context().close();
 });
 
