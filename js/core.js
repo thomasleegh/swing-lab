@@ -345,7 +345,7 @@ function idealTime(phases, t) {
 }
 function idealAt(phases, t) { return R.sample(R.IDEAL, clamp(idealTime(phases, t), 0, R.PHASES[R.PHASES.length - 1].t)); }
 function idealPose(phases, t, scale = 1) {
-  const q = R.pose(idealAt(phases, t));
+  const q = idealPoseSmooth(phases, t);
   if (scale === 1) return q;
   const o = {}; for (const k in q) o[k] = k === 'look' ? q[k] : V.mul(q[k], scale);
   return o;
@@ -525,9 +525,138 @@ function fitRig(res) {
     return k;
   });
 }
-function youRigPose(res, keys, t) { return R.pose(R.sample(keys, clamp(idealTime(res.phases, t), 0, R.PHASES[R.PHASES.length - 1].t))); }
+// ---------- 9. clocks: which rig time to show at each moment of your clip ----------
+// The rig's 9 keys ease in and out, so sampling it on a straight time line makes the club surge and stall at
+// every position. Both figures are re-timed by distance travelled along their own path instead:
+// - Ideal: a real tempo (smooth backswing, still at the top, speeding up all the way to impact, then slowing),
+//   pinned to your address, top, impact and finish.
+// - You: at the speed your tracked hands actually moved, segment by segment between your 9 positions.
+const RT = R.PHASES.map((p) => p.t), RT_END = RT[RT.length - 1];
+const progW = (q) => [q.H, q.club]; // what "distance travelled" means: hands + clubhead
+function arcTable(keys, a, b, fn, n = 120) { // cumulative path length of fn(pose) for rig time a..b
+  const tau = [], L = []; let prev = null, acc = 0;
+  for (let i = 0; i <= n; i++) {
+    const t = a + (b - a) * i / n, pts = fn(R.pose(R.sample(keys, t)));
+    if (prev) for (let k = 0; k < pts.length; k++) acc += V.len(V.sub(pts[k], prev[k]));
+    tau.push(t); L.push(acc); prev = pts;
+  }
+  return { tau, L };
+}
+function invArc(tb, frac) { // rig time at which this fraction of the segment's length has been covered
+  const total = tb.L[tb.L.length - 1];
+  if (!(total > 1e-6)) return lerp(tb.tau[0], tb.tau[tb.tau.length - 1], frac);
+  const x = clamp(frac, 0, 1) * total; let i = 1;
+  while (i < tb.L.length - 1 && tb.L[i] < x) i++;
+  const u = (x - tb.L[i - 1]) / Math.max(1e-9, tb.L[i] - tb.L[i - 1]);
+  return lerp(tb.tau[i - 1], tb.tau[i], clamp(u, 0, 1));
+}
+const segTime = (ut, rt, t) => { // outside the swing: run on at the rig's own speed, clamped by the caller
+  if (t <= ut[0]) return rt[0] - (ut[0] - t);
+  return rt[rt.length - 1] + (t - ut[ut.length - 1]);
+};
+// Ideal tempo profiles: fraction of the segment's path covered after fraction u of its time.
+const BACK = (u) => (1 - Math.cos(Math.PI * u)) / 2;                   // starts and ends at rest
+const DOWN = (u) => (3 * u * u - u * u * u) / 2;                       // from rest, fastest at impact
+let idealTabs = null;
+function idealClock(phases) {
+  if (phases.__idealClock) return phases.__idealClock;
+  const A = ['address', 'top', 'impact', 'finish'], ra = A.map((k) => RT[PH.indexOf(k)]), ua = A.map((k) => phases[k]);
+  if (!idealTabs) idealTabs = [0, 1, 2].map((s) => arcTable(R.IDEAL, ra[s], ra[s + 1], progW));
+  // follow-through: leave impact at the downswing's speed and come smoothly to rest at the finish
+  const dDown = ua[2] - ua[1], dFol = ua[3] - ua[2];
+  const vImp = 1.5 * idealTabs[1].L.at(-1) / Math.max(1e-3, dDown);
+  const kF = clamp(vImp * dFol / Math.max(1e-6, idealTabs[2].L.at(-1)), 1.2, 4);
+  const FOL = (u) => 1 - Math.pow(1 - u, kF);
+  const prof = [BACK, DOWN, FOL];
+  const fn = (t) => {
+    if (t <= ua[0] || t >= ua[3]) return segTime(ua, ra, t);
+    const s = t < ua[1] ? 0 : t < ua[2] ? 1 : 2;
+    return invArc(idealTabs[s], prof[s]((t - ua[s]) / Math.max(1e-3, ua[s + 1] - ua[s])));
+  };
+  Object.defineProperty(phases, '__idealClock', { value: fn, enumerable: false });
+  return fn;
+}
+function idealPoseSmooth(phases, t) { return R.pose(R.sample(R.IDEAL, clamp(idealClock(phases)(t), 0, RT_END))); }
+function inPlane(view, p) { return view === 'dtl' ? [p[1], p[2]] : [p[0], p[1]]; }
+const youClocks = new WeakMap();
+function youClock(res, keys) {
+  if (youClocks.has(keys)) return youClocks.get(keys);
+  const F = res.frames, I = res.idx, ut = PH.map((k) => res.phases[k]);
+  // your hand path in the camera's plane, lightly smoothed, as cumulative distance per frame
+  const raw = F.map((f) => inPlane(res.view, f.j.H)), hp = raw.map((_, i) => {
+    let a = [0, 0], w = 0;
+    for (let d = -3; d <= 3; d++) { const j = i + d; if (j < 0 || j >= raw.length) continue; const ww = Math.exp(-(d * d) / (2 * 1.5 * 1.5)); a[0] += raw[j][0] * ww; a[1] += raw[j][1] * ww; w += ww; }
+    return [a[0] / w, a[1] / w];
+  });
+  const cum = [0]; for (let i = 1; i < hp.length; i++) cum.push(cum[i - 1] + Math.hypot(hp[i][0] - hp[i - 1][0], hp[i][1] - hp[i - 1][1]));
+  const T = F.map((f) => f.t);
+  // Catmull-Rom between frames (straight lines between 30 fps samples put a small kink in the speed at every frame)
+  const cr = (arr, t) => {
+    let i = 1; while (i < T.length - 1 && T[i] < t) i++;
+    const u = clamp((t - T[i - 1]) / Math.max(1e-6, T[i] - T[i - 1]), 0, 1), g = (j) => arr[clamp(j, 0, arr.length - 1)];
+    const p0 = g(i - 2), p1 = g(i - 1), p2 = g(i), p3 = g(i + 1), u2 = u * u, u3 = u2 * u;
+    return 0.5 * (2 * p1 + (p2 - p0) * u + (2 * p0 - 5 * p1 + 4 * p2 - p3) * u2 + (3 * p1 - p0 - 3 * p2 + p3) * u3);
+  };
+  const cumAt = (t) => { const c = cr(cum, t), lo = cum[0], hi = cum[cum.length - 1]; return clamp(c, lo, hi); };
+  // Timed over the three big stretches (address→top, top→impact, impact→finish), not the 9 short ones:
+  // some of those are a single frame long (delivery→impact), and timing those by hand movement jumps.
+  const A = ['address', 'top', 'impact', 'finish'], ua = A.map((k) => res.phases[k]), ra = A.map((k) => RT[PH.indexOf(k)]);
+  const segs = [0, 1, 2].map((s) => {
+    const tb = arcTable(keys, ra[s], ra[s + 1], (q) => { const h = inPlane(res.view, q.H); return [[h[0], h[1], 0]]; }, 160);
+    const c0 = cumAt(ua[s]), c1 = cumAt(ua[s + 1]);
+    return { tb, c0, span: c1 - c0 };
+  });
+  const rawFn = (t) => {
+    if (t <= ua[0] || t >= ua[3]) return segTime(ut, RT, t);
+    const s = t < ua[1] ? 0 : t < ua[2] ? 1 : 2, g = segs[s];
+    const u = clamp((t - ua[s]) / Math.max(1e-3, ua[s + 1] - ua[s]), 0, 1);
+    const frac = g.span > 0.02 ? (cumAt(t) - g.c0) / g.span : u;
+    return invArc(g.tb, frac);
+  };
+  // Where the hands nearly stop (top, impact) a small difference in distance is a big step along the rig,
+  // so the clock itself is smoothed (Gaussian, 30 ms) on a fine grid. An average of an increasing curve
+  // still only moves forward.
+  const GD = 1 / 240, g0t = ua[0] - 0.1, gn = Math.ceil((ua[3] + 0.1 - g0t) / GD);
+  const gr = []; for (let i = 0; i <= gn; i++) gr.push(rawFn(g0t + i * GD));
+  const sig = 0.03 / GD, rad = Math.ceil(sig * 3), gs = gr.map((_, i) => {
+    let a = 0, w = 0;
+    for (let d = -rad; d <= rad; d++) { const j = clamp(i + d, 0, gn); const ww = Math.exp(-(d * d) / (2 * sig * sig)); a += gr[j] * ww; w += ww; }
+    return a / w;
+  });
+  const fn = (t) => {
+    if (t <= g0t || t >= g0t + gn * GD) return segTime(ut, RT, t);
+    const x = (t - g0t) / GD, i = Math.min(gn - 1, Math.floor(x));
+    return lerp(gs[i], gs[i + 1], x - i);
+  };
+  // Route: between the 9 positions the rig's curve can take a different line than your hands did.
+  // Per frame, the gap between your hands (relative to your address, like fitRig) and the rig's hands,
+  // smoothed, faded to zero at address and finish, and added back in the camera's plane only.
+  const a0 = I.address, a1 = I.finish, H0 = inPlane(res.view, R.IDEAL[0].H);
+  const hA = [0, 1].map((k) => mean([a0 - 1, a0, a0 + 1].filter((x) => x >= 0 && x < hp.length).map((x) => hp[x][k])));
+  const gap = T.map((t, i) => {
+    if (i <= a0 || i >= a1) return [0, 0];
+    const q = inPlane(res.view, R.sample(keys, clamp(fn(t), 0, RT_END)).H);
+    return [H0[0] + hp[i][0] - hA[0] - q[0], H0[1] + hp[i][1] - hA[1] - q[1]];
+  });
+  const sg = gap.map((_, i) => {
+    let a = [0, 0], w = 0;
+    for (let d = -4; d <= 4; d++) { const j = i + d; if (j < 0 || j >= gap.length) continue; const ww = Math.exp(-(d * d) / (2 * 2 * 2)); a[0] += gap[j][0] * ww; a[1] += gap[j][1] * ww; w += ww; }
+    const fade = clamp(Math.min(i - a0, a1 - i) / 4, 0, 1);
+    return [a[0] / w * fade, a[1] / w * fade];
+  });
+  const g0 = sg.map((v) => v[0]), g1 = sg.map((v) => v[1]);
+  const gapAt = (t) => (t <= T[a0] || t >= T[a1]) ? [0, 0] : [cr(g0, t), cr(g1, t)];
+  const out = { time: fn, gap: gapAt };
+  youClocks.set(keys, out);
+  return out;
+}
+function youRigPose(res, keys, t) {
+  const c = youClock(res, keys), s = R.sample(keys, clamp(c.time(t), 0, RT_END)), g = c.gap(t);
+  if (res.view === 'dtl') { s.H[1] += g[0]; s.H[2] += g[1]; } else { s.H[0] += g[0]; s.H[1] += g[1]; }
+  return R.pose(s);
+}
 
-const Core = { fitRig, youRigPose, findSwings, analyzeSwing, clubPath, idealPose, idealAt, idealTime, youAt, measure, notesFor, summarize, planesImg, gripN, handHeight, spineTilt, PH, IDEAL_TEXT };
+const Core = { fitRig, youRigPose, findSwings, analyzeSwing, clubPath, idealPose, idealAt, idealTime, idealClock, youClock, youAt, measure, notesFor, summarize, planesImg, gripN, handHeight, spineTilt, PH, IDEAL_TEXT };
 if (typeof module !== 'undefined') module.exports = Core;
 if (typeof globalThis !== 'undefined') globalThis.Core = Core;
 })();

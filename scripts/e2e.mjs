@@ -324,6 +324,31 @@ await test('"You" is the same rig as the ideal: identical at address, same feet,
   await p.context().close();
 });
 
+await test('tempo: ideal builds smoothly, rests at the top, speeds up to impact; "You" moves with your tracked hands', async () => {
+  const p = await newPage(); await upload(p);
+  const r = await p.evaluate(() => {
+    const st = window.__swinglab.state, res = st.res, C = window.Core, ph = res.phases, dt = 1 / 120;
+    const sp = (a, b) => { const out = []; let prev = null; for (let t = a; t <= b + 1e-9; t += dt) { const q = C.idealPose(ph, t, 1).club; if (prev) out.push(Math.hypot(q[0] - prev[0], q[1] - prev[1], q[2] - prev[2]) / dt); prev = q; } return out; };
+    // backswing: one rise and one fall (no surge/stall at takeaway or lead-arm-parallel)
+    const back = sp(ph.address, ph.top), peak = Math.max(...back), atTop = back[back.length - 1];
+    let turns = 0, dir = 1, ext = back[0]; // speed reversals bigger than 10% of peak (hysteresis)
+    for (const v of back) { if (dir > 0) { if (v > ext) ext = v; else if (ext - v > 0.1 * peak) { turns++; dir = -1; ext = v; } } else { if (v < ext) ext = v; else if (v - ext > 0.1 * peak) { turns++; dir = 1; ext = v; } } }
+    // downswing: never slows down by more than 10% before impact
+    const down = sp(ph.top, ph.impact); let worstDrop = 0, best = 0;
+    for (const v of down) { best = Math.max(best, v); worstDrop = Math.max(worstDrop, (best - v) / Math.max(1e-6, best)); }
+    // "You": hands follow the tracked hands in the camera's plane
+    const F = res.frames, I = res.idx, inP = (h) => res.view === 'dtl' ? [h[1], h[2]] : [h[0], h[1]];
+    const hA = inP(F[I.address].j.H), H0 = inP(window.Rig.IDEAL[0].H); let err = 0, n = 0;
+    for (let i = I.address; i <= I.finish; i++) { const q = inP(C.youRigPose(res, st.keys, F[i].t).H), m = inP(F[i].j.H); err += (H0[0] + m[0] - hA[0] - q[0]) ** 2 + (H0[1] + m[1] - hA[1] - q[1]) ** 2; n++; }
+    return { turns, peak, atTop, worstDrop, rms: Math.sqrt(err / n) };
+  });
+  assert(r.turns <= 1, 'ideal backswing surges/stalls: ' + r.turns + ' speed reversals');
+  assert(r.atTop < r.peak * 0.1, `ideal not at rest at the top: ${r.atTop} vs peak ${r.peak}`);
+  assert(r.worstDrop < 0.1, 'ideal downswing slows before impact by ' + Math.round(r.worstDrop * 100) + '%');
+  assert(r.rms < 0.04, '"You" hands off the tracked hands by ' + (r.rms * 100).toFixed(1) + ' cm RMS');
+  await p.context().close();
+});
+
 await test('position carousel: arrows and dots step through the 9 positions; planes toggle on and off', async () => {
   const p = await newPage(); await upload(p);
   assert((await p.$$('#phaseChips button')).length === 9, 'dots');

@@ -36,7 +36,7 @@ He swings left-handed. Proposal "A" (side drawer library) was the chosen UI.
 5. **Never commit swing videos or tracking dumps** (public repo). `.gitignore` blocks video files and `fixtures/`.
 
 ## Tests
-- `node scripts/e2e.mjs` — 23 checks with a mock tracker (`scripts/mock-tracker.js` builds MediaPipe-shaped data
+- `node scripts/e2e.mjs` — 24 checks with a mock tracker (`scripts/mock-tracker.js` builds MediaPipe-shaped data
   from the rig: lefty/righty, down-the-line/face-on, no-swing, error, slow).
 - `node scripts/realrun.mjs <clip.webm> <outdir> [second.webm]` — the whole app on a real clip (local only).
 - `node scripts/track.mjs <clip> <out.json>` + `node scripts/analyze.js <out.json>` — tracker + core on real clips.
@@ -59,6 +59,12 @@ He swings left-handed. Proposal "A" (side drawer library) was the chosen UI.
   The wireframe now draws **both figures with the rig**: `Core.fitRig` turns the measurements at the 9 positions into
   rig keyframes (hand path in the image plane + club angle + spine tilt + hip shift, all relative to your own address;
   depth/turns kept from the ideal) and `youRigPose` blends them like the artifact did. Raw joints only feed metrics.
+- Nov 6: timing looked off, even for the ideal. The rig's 9 keys ease in/out, so on a straight clock the club surged
+  and stalled at every position (and the ideal was stretched to your 1-frame-long phase gaps). Now both figures are
+  re-timed by distance travelled (`idealClock`, `youClock` in core.js): ideal = real tempo (smooth backswing, rest at
+  top, accelerate to impact) pinned at address/top/impact/finish; You = speed of your tracked hands over the same 3
+  stretches, clock smoothed 30 ms, plus a smoothed hand-route correction in the camera plane (hand error ~6 → ~2 cm).
+  Don't time You over the 9 short segments (delivery→impact can be 1 frame → jumps). `idealAt` (analysis) unchanged.
 - Safari copies canvas-to-canvas lazily: each head gets its own scratch canvas (else heads show another view's face).
 
 ## Working style (user: Thomas)
