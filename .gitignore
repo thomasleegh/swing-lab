@@ -1,0 +1,7 @@
+node_modules/
+.DS_Store
+# never commit personal swing videos or tracking dumps
+*.mov
+*.mp4
+*.webm
+fixtures/

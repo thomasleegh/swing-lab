@@ -1,0 +1,17 @@
+<!doctype html><html><head><meta charset="utf-8"><title>track harness</title>
+<script src="../js/rig.js"></script><script src="../js/core.js"></script></head><body>
+<script>globalThis.__FORCE_CPU = true;</script>
+<script type="module">
+// Dev/test page: runs the in-app tracker on a video file and exposes the raw result for scripts.
+import { trackVideo } from '../js/tracker.js';
+const qs = new URLSearchParams(location.search);
+window.__out = { done: false, err: null, progress: [] };
+try {
+  const blob = await (await fetch(qs.get('file'))).blob();
+  const url = URL.createObjectURL(blob);
+  const r = await trackVideo(url, { base: '..', findSwings: Core.findSwings, onProgress: (p) => window.__out.progress.push(p) });
+  r.video.remove();
+  window.__out.result = { meta: r.meta, coarse: r.coarse, swings: r.swings };
+} catch (e) { window.__out.err = String(e && e.stack || e); }
+window.__out.done = true;
+</script></body></html>

@@ -1,0 +1,261 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Swing Lab">
+<meta name="theme-color" content="#eef2ee" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0f1614" media="(prefers-color-scheme: dark)">
+<title>Swing Lab</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Source+Sans+3:wght@400;600&family=JetBrains+Mono:wght@500&display=swap">
+<style>
+/* Layout: top bar + slide-in library drawer (left); session view = swing chips, two wireframe views, notes, keyframes */
+:root{
+  --bg:#eef2ee; --panel:#ffffff; --ink:#18211c; --muted:#56645b; --line:#d5ddd7; --chip:#e3e9e4; --soft:#f4f7f4;
+  --you:#d9472b; --ideal:#1f8a4c; --ghost:#7a5fb0; --plane:#b07a0e; --plane2:#2f7fb8; --ground:#b7c4b9;
+  --hair:#2b211c; --eye:#ffffff; --good:#1f7a43; --warn:#9a6400; --bad:#b3361d; --goodbg:#e3f2e8; --warnbg:#fbf0dc; --badbg:#f8e4df;
+  --scrim:rgba(15,22,20,.38);
+  --f-display:"Barlow Condensed","Arial Narrow",sans-serif;
+  --f-body:"Source Sans 3",-apple-system,"Segoe UI",system-ui,sans-serif;
+  --f-mono:"JetBrains Mono",ui-monospace,Menlo,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#0f1614; --panel:#17211e; --ink:#e6ede8; --muted:#9aaaa0; --line:#2a3833; --chip:#22302b; --soft:#1c2925;
+  --you:#ff6a4d; --ideal:#46c97f; --ghost:#b49cf0; --plane:#e6a93a; --plane2:#5aa9e0; --ground:#3a4a43;
+  --hair:#0d0907; --eye:#f4f1ea; --good:#5fd394; --warn:#e8b45a; --bad:#ff8a73; --goodbg:#183326; --warnbg:#33290f; --badbg:#3a1d17; --scrim:rgba(0,0,0,.55); color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0f1614; --panel:#17211e; --ink:#e6ede8; --muted:#9aaaa0; --line:#2a3833; --chip:#22302b; --soft:#1c2925;
+  --you:#ff6a4d; --ideal:#46c97f; --ghost:#b49cf0; --plane:#e6a93a; --plane2:#5aa9e0; --ground:#3a4a43;
+  --hair:#0d0907; --eye:#f4f1ea; --good:#5fd394; --warn:#e8b45a; --bad:#ff8a73; --goodbg:#183326; --warnbg:#33290f; --badbg:#3a1d17; --scrim:rgba(0,0,0,.55); color-scheme:dark}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:15px;line-height:1.45;-webkit-text-size-adjust:100%}
+[hidden]{display:none!important}
+button,.btn{-webkit-appearance:none;appearance:none;font:600 15px var(--f-body);color:var(--ink);background:var(--chip);border:1px solid var(--line);border-radius:10px;min-height:40px;padding:0 14px;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:8px;touch-action:manipulation}
+button:focus-visible,input:focus-visible+label,input[type=range]:focus-visible{outline:2px solid var(--plane2);outline-offset:2px}
+.btn-dark{background:var(--ink);color:var(--panel);border-color:var(--ink)}
+.icon-btn{width:44px;height:44px;min-height:44px;padding:0;background:var(--panel)}
+.icon-btn.dark{background:var(--ink);border-color:var(--ink)}
+svg.i{width:22px;height:22px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;flex:none}
+
+/* top bar */
+.topbar{position:sticky;top:0;z-index:5;background:var(--bg);padding:calc(env(safe-area-inset-top,0px) + 8px) max(16px,env(safe-area-inset-right,0px)) 8px max(16px,env(safe-area-inset-left,0px));display:flex;align-items:center;gap:10px;border-bottom:1px solid transparent}
+.topbar.scrolled{border-bottom-color:var(--line)}
+.ttl{flex:1;min-width:0;display:flex;flex-direction:column}
+.ttl b{font-family:var(--f-display);font-weight:700;font-size:24px;line-height:1.05;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ttl span{font-size:12.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+main{max-width:1080px;margin:0 auto;padding:6px max(16px,env(safe-area-inset-right,0px)) calc(40px + env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-left,0px));display:grid;gap:14px}
+
+/* drawer */
+.scrim{position:fixed;inset:0;background:var(--scrim);z-index:20;opacity:0;transition:opacity .22s}
+.scrim.on{opacity:1}
+.drawer{position:fixed;top:0;bottom:0;left:0;width:min(340px,86vw);z-index:21;background:var(--panel);box-shadow:8px 0 30px rgba(0,0,0,.18);transform:translateX(-105%);transition:transform .25s ease;display:flex;flex-direction:column;padding-top:env(safe-area-inset-top,0px);padding-left:env(safe-area-inset-left,0px)}
+.drawer.on{transform:none}
+@media (prefers-reduced-motion:reduce){.drawer,.scrim{transition:none}}
+.dr-head{display:flex;align-items:center;justify-content:space-between;padding:8px 8px 0 16px;height:56px}
+.dr-head b{font-family:var(--f-display);font-weight:700;font-size:28px}
+.dr-add{padding:8px 16px 12px}
+.dr-add button{width:100%;height:52px;font-size:17px;border-radius:12px}
+.dr-add p{margin:8px 2px 0;font-size:13px;color:var(--muted)}
+.dr-scroll{overflow-y:auto;-webkit-overflow-scrolling:touch;flex:1;padding-bottom:calc(16px + env(safe-area-inset-bottom,0px))}
+.dr-sec{padding:14px 16px 6px;font-family:var(--f-mono);font-size:11px;letter-spacing:.08em;color:var(--muted);text-transform:uppercase}
+.item{display:flex;align-items:center;gap:12px;padding:10px 12px 10px 16px;border-top:1px solid var(--line)}
+.item.cur{background:var(--goodbg)}
+.item .open{flex:1;min-width:0;display:flex;gap:12px;align-items:center;background:none;border:0;padding:0;min-height:72px;text-align:left;justify-content:flex-start;border-radius:8px}
+.thumb{width:54px;height:72px;border-radius:8px;background:#1b2723;flex:none;object-fit:cover;display:block}
+.meta{display:flex;flex-direction:column;gap:1px;min-width:0}
+.meta b{font-size:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.meta span{font-size:13px;color:var(--muted);font-weight:400}
+.meta .fault{color:var(--bad);font-weight:600}
+.meta .ok{color:var(--good);font-weight:600}
+.bar{height:6px;border-radius:3px;background:var(--line);overflow:hidden;margin-top:4px;width:150px;max-width:100%}
+.bar i{display:block;height:6px;background:var(--ideal);width:0}
+.more{width:40px;min-height:40px;padding:0;background:transparent;border-color:transparent}
+.actions{display:flex;gap:8px;padding:0 16px 12px 82px;flex-wrap:wrap}
+.actions button{min-height:36px;font-size:14px}
+.actions .del{color:var(--bad)}
+.dr-foot{padding:14px 16px;font-size:12.5px;color:var(--muted)}
+
+/* cards */
+.card{background:var(--panel);border:1px solid var(--line);border-radius:12px}
+.empty{padding:22px 18px;display:grid;gap:12px}
+.empty h1{font-family:var(--f-display);font-size:34px;line-height:1;margin:0;text-wrap:balance}
+.empty ol{margin:0;padding-left:20px;display:grid;gap:4px}
+.banner{padding:12px 14px;display:flex;flex-direction:column;gap:8px}
+.banner.err{background:var(--badbg);border-color:transparent}
+.banner .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.banner .bar{width:100%;height:8px}
+.banner small{color:var(--muted)}
+.chips{display:flex;gap:6px;overflow-x:auto;padding-bottom:2px;scrollbar-width:none}
+.chips::-webkit-scrollbar{display:none}
+.chips button{flex:none;min-height:36px;border-radius:18px;font-size:14px;background:var(--panel)}
+.chips button[aria-pressed=true]{background:var(--ink);color:var(--panel);border-color:var(--ink)}
+.pill{font-family:var(--f-mono);font-size:11px;padding:4px 8px;border-radius:6px;white-space:nowrap}
+.pill.good{background:var(--goodbg);color:var(--good)} .pill.warn{background:var(--warnbg);color:var(--warn)} .pill.bad{background:var(--badbg);color:var(--bad)} .pill.info{background:var(--chip);color:var(--muted)}
+.ctrl{padding:12px;display:grid;gap:10px}
+.ctrl .row{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px}
+#play{min-width:84px;background:var(--ink);color:var(--panel);border-color:var(--ink)}
+.seg{display:inline-flex}
+.seg input{position:absolute;opacity:0;pointer-events:none}
+.seg label{font:600 14px var(--f-body);background:var(--chip);border:1px solid var(--line);min-height:36px;padding:0 11px;display:inline-flex;align-items:center;cursor:pointer;margin-left:-1px}
+.seg label:first-of-type{border-radius:8px 0 0 8px;margin-left:0}
+.seg label:last-of-type{border-radius:0 8px 8px 0}
+.seg input:checked+label{background:var(--ink);color:var(--panel);border-color:var(--ink)}
+.grp{display:inline-flex;align-items:center;gap:8px;font-size:13px;color:var(--muted)}
+.chk{display:inline-flex;align-items:center;gap:6px;font-size:14px;color:var(--ink)}
+.chk input{width:20px;height:20px;accent-color:var(--ink)}
+.views{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:14px}
+figure{margin:0;background:var(--panel);border:1px solid var(--line);border-radius:12px;overflow:hidden;display:grid;min-width:0}
+.vhead{display:flex;justify-content:space-between;align-items:baseline;gap:8px;padding:10px 14px 0;flex-wrap:wrap}
+.vhead h2{font-family:var(--f-display);font-weight:600;font-size:22px;margin:0;letter-spacing:.02em;text-transform:uppercase}
+.vhead small{font-family:var(--f-mono);font-size:11px;color:var(--muted)}
+canvas.wf{width:100%;aspect-ratio:1/1;display:block;max-width:100%;touch-action:pan-y}
+.vscrub{display:flex;flex-direction:column;gap:4px;padding:6px 14px 12px}
+.vscrub input{width:100%;min-width:0;margin:0;height:30px;accent-color:var(--ink)}
+.vph{font-family:var(--f-mono);font-size:13px;color:var(--ink);text-align:center}
+figcaption{font-size:13px;color:var(--muted);padding:0 14px 12px}
+.tags{display:flex;gap:6px;flex-wrap:wrap}
+.ghostbar{padding:10px 14px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;border-color:var(--ghost)}
+.ghostbar b{color:var(--ghost)}
+.phase-name{font-family:var(--f-display);font-size:28px;font-weight:700;margin:4px 0 0}
+.notes{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px}
+.note{padding:12px 14px;min-width:0}
+.note h3{margin:0 0 4px;font-family:var(--f-display);font-size:19px;font-weight:600;letter-spacing:.02em;text-transform:uppercase;display:flex;align-items:center;gap:8px}
+.note h3 i{width:10px;height:10px;border-radius:50%;display:inline-block}
+.note p{margin:0}
+h2.sec{font-family:var(--f-display);font-size:26px;margin:10px 0 0}
+.kf{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px}
+.kf button{display:flex;flex-direction:column;align-items:stretch;gap:0;padding:0;background:var(--panel);border-radius:12px;overflow:hidden;min-height:0;text-align:left}
+.kf button.flag{border:2px solid var(--you)}
+.kf canvas{width:100%;aspect-ratio:3/4;display:block;background:#1b2723}
+.kf .cap{padding:8px 10px 10px;display:flex;flex-direction:column;gap:1px}
+.kf .cap b{font-size:14px}
+.kf .cap span{font-size:12.5px;font-weight:600}
+.lv-good{color:var(--good)} .lv-warn{color:var(--warn)} .lv-bad{color:var(--bad)} .lv-info{color:var(--muted)}
+.metrics{padding:6px 14px}
+.metrics div{display:flex;justify-content:space-between;gap:12px;padding:8px 0;border-top:1px solid var(--line);font-size:14px}
+.metrics div:first-child{border-top:0}
+.metrics span:last-child{font-family:var(--f-mono);font-variant-numeric:tabular-nums;text-align:right}
+.fine{font-size:12.5px;color:var(--muted);margin:0}
+dialog{border:0;padding:0;background:var(--panel);color:var(--ink);border-radius:14px;width:min(560px,94vw);max-height:92vh}
+dialog::backdrop{background:var(--scrim)}
+.dlg{display:flex;flex-direction:column}
+.dlg canvas{width:100%;aspect-ratio:3/4;display:block;background:#1b2723;max-height:70vh}
+.dlg .row{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:10px 12px}
+.dlg p{margin:0 14px 14px}
+.toast{position:fixed;left:50%;bottom:calc(24px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--ink);color:var(--panel);padding:10px 16px;border-radius:10px;font-weight:600;z-index:40;max-width:90vw}
+</style>
+</head>
+<body>
+<header class="topbar" id="topbar">
+  <button class="icon-btn" id="menuBtn" type="button" aria-label="Open library" aria-controls="drawer" aria-expanded="false">
+    <svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+  </button>
+  <div class="ttl"><b id="title">Swing Lab</b><span id="subtitle">Your swing vs an on-plane model</span></div>
+  <button class="icon-btn dark" id="addTop" type="button" aria-label="Add video">
+    <svg class="i" viewBox="0 0 24 24" aria-hidden="true" style="stroke:var(--panel)"><path d="M12 5v14M5 12h14"/></svg>
+  </button>
+</header>
+
+<div class="scrim" id="scrim" hidden></div>
+<nav class="drawer" id="drawer" aria-label="Swing library" aria-hidden="true" inert>
+  <div class="dr-head"><b>Swing Lab</b>
+    <button class="icon-btn" id="closeDrawer" type="button" aria-label="Close library" style="border-color:transparent">
+      <svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+    </button>
+  </div>
+  <div class="dr-add">
+    <button class="btn-dark" id="addDrawer" type="button"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>Add video</button>
+    <p>From Photos or Files. Analysis runs on your phone; videos never leave it.</p>
+  </div>
+  <div class="dr-scroll" id="list"></div>
+  <div class="dr-foot" id="usage"></div>
+</nav>
+<input type="file" id="file" accept="video/*" hidden>
+
+<main id="main">
+  <section class="card empty" id="empty" hidden>
+    <h1>Add a swing video</h1>
+    <p>Swing Lab finds every swing in the clip, builds a stick figure of your body and club, and puts it next to an on-plane model with marked-up keyframes.</p>
+    <ol>
+      <li>Film down the line: phone behind you at hand height, pointing along your target line.</li>
+      <li>Keep your whole body and the club in the frame.</li>
+      <li>A face-on clip (phone facing you) shows weight shift better.</li>
+    </ol>
+    <div><button class="btn-dark" id="addEmpty" type="button"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>Add video</button></div>
+    <p class="fine">Videos and results are stored only on this phone.</p>
+  </section>
+
+  <section class="card banner" id="status" hidden aria-live="polite"></section>
+
+  <div id="session" hidden>
+    <div style="display:grid;gap:14px">
+      <div class="chips" id="swingChips" role="tablist" aria-label="Swings"></div>
+      <div class="card ghostbar" id="ghostBar" hidden></div>
+      <section class="card ctrl" aria-label="Playback">
+        <div class="row">
+          <button id="play" type="button">Play</button>
+          <span class="grp">Speed
+            <span class="seg" role="radiogroup" aria-label="Speed">
+              <input type="radio" name="spd" id="spd25" value="0.25"><label for="spd25">¼×</label>
+              <input type="radio" name="spd" id="spd50" value="0.5" checked><label for="spd50">½×</label>
+              <input type="radio" name="spd" id="spd100" value="1"><label for="spd100">1×</label>
+            </span>
+          </span>
+          <span class="grp">Show
+            <span class="seg" role="radiogroup" aria-label="Show">
+              <input type="radio" name="show" id="showBoth" value="both" checked><label for="showBoth">Both</label>
+              <input type="radio" name="show" id="showYou" value="you"><label for="showYou">You</label>
+              <input type="radio" name="show" id="showIdeal" value="ideal"><label for="showIdeal">Ideal</label>
+            </span>
+          </span>
+          <label class="chk"><input type="checkbox" id="trace" checked>Clubhead path</label>
+        </div>
+        <div class="chips" id="phaseChips" aria-label="Swing positions"></div>
+      </section>
+      <div class="views">
+        <figure>
+          <div class="vhead"><h2>Down the line</h2><small id="dtlNote">camera behind you</small></div>
+          <canvas class="wf" id="cvDtl" aria-label="Down-the-line stick figure"></canvas>
+          <div class="vscrub"><input type="range" class="pos" id="posDtl" min="0" max="1000" step="1" value="0" aria-label="Swing position, down the line"><span class="vph" aria-hidden="true"></span></div>
+          <figcaption>Hands should travel between the two dashed lines.</figcaption>
+        </figure>
+        <figure>
+          <div class="vhead"><h2>Face-on</h2><small id="foNote">camera facing you</small></div>
+          <canvas class="wf" id="cvFo" aria-label="Face-on stick figure"></canvas>
+          <div class="vscrub"><input type="range" class="pos" id="posFo" min="0" max="1000" step="1" value="0" aria-label="Swing position, face-on"><span class="vph" aria-hidden="true"></span></div>
+          <figcaption id="foCap">Bars show pressure on the lead foot.</figcaption>
+        </figure>
+      </div>
+      <div class="tags" id="tags"></div>
+      <p class="phase-name" id="phaseName"></p>
+      <div class="notes">
+        <div class="card note"><h3><i style="background:var(--you)"></i>What you're doing</h3><p id="noteYou"></p></div>
+        <div class="card note"><h3><i style="background:var(--ideal)"></i>Where it needs to be</h3><p id="noteIdeal"></p></div>
+      </div>
+      <h2 class="sec">Keyframes</h2>
+      <p class="fine" style="margin-top:-8px">Red: what you're doing. Green: where it needs to be. Tap to enlarge.</p>
+      <div class="kf" id="kf"></div>
+      <h2 class="sec">Numbers</h2>
+      <div class="card metrics" id="metrics"></div>
+      <p class="fine" id="howBuilt"></p>
+    </div>
+  </div>
+</main>
+
+<dialog id="dlg"><div class="dlg">
+  <div class="row"><b id="dlgTitle"></b><button type="button" id="dlgClose">Close</button></div>
+  <canvas id="dlgCv"></canvas>
+  <p id="dlgText"></p>
+</div></dialog>
+<div class="toast" id="toast" hidden role="status"></div>
+
+<script src="js/rig.js"></script>
+<script src="js/core.js"></script>
+<script type="module" src="js/app.js"></script>
+</body></html>
