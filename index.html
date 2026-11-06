@@ -97,7 +97,14 @@ main{max-width:1080px;margin:0 auto;padding:6px max(16px,env(safe-area-inset-rig
 .chips button[aria-pressed=true]{background:var(--ink);color:var(--panel);border-color:var(--ink)}
 .pill{font-family:var(--f-mono);font-size:11px;padding:4px 8px;border-radius:6px;white-space:nowrap}
 .pill.good{background:var(--goodbg);color:var(--good)} .pill.warn{background:var(--warnbg);color:var(--warn)} .pill.bad{background:var(--badbg);color:var(--bad)} .pill.info{background:var(--chip);color:var(--muted)}
-.ctrl{padding:12px;display:grid;gap:10px}
+.ctrl{padding:14px;display:grid;gap:12px}
+.crow{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.crow.toggles{justify-content:flex-start;gap:24px}
+.seg.full{display:flex}
+.seg.full label{flex:1;justify-content:center}
+.ctrl .seg label{min-height:40px;padding:0 14px}
+#play{min-width:96px}
+.csep{border:0;border-top:1px solid var(--line);margin:2px -14px 0}
 .pcar{display:flex;align-items:center;gap:6px}
 .pnav{width:44px;min-height:44px;padding:0;flex:none}
 .pmid{flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;gap:2px}
@@ -207,25 +214,24 @@ dialog::backdrop{background:var(--scrim)}
       <div class="chips" id="swingChips" role="tablist" aria-label="Swings"></div>
       <div class="card ghostbar" id="ghostBar" hidden></div>
       <section class="card ctrl" aria-label="Playback">
-        <div class="row">
+        <div class="crow">
           <button id="play" type="button">Play</button>
-          <span class="grp">Speed
-            <span class="seg" role="radiogroup" aria-label="Speed">
-              <input type="radio" name="spd" id="spd25" value="0.25"><label for="spd25">¼×</label>
-              <input type="radio" name="spd" id="spd50" value="0.5" checked><label for="spd50">½×</label>
-              <input type="radio" name="spd" id="spd100" value="1"><label for="spd100">1×</label>
-            </span>
+          <span class="seg" role="radiogroup" aria-label="Speed">
+            <input type="radio" name="spd" id="spd25" value="0.25"><label for="spd25">¼×</label>
+            <input type="radio" name="spd" id="spd50" value="0.5" checked><label for="spd50">½×</label>
+            <input type="radio" name="spd" id="spd100" value="1"><label for="spd100">1×</label>
           </span>
-          <span class="grp">Show
-            <span class="seg" role="radiogroup" aria-label="Show">
-              <input type="radio" name="show" id="showBoth" value="both" checked><label for="showBoth">Both</label>
-              <input type="radio" name="show" id="showYou" value="you"><label for="showYou">You</label>
-              <input type="radio" name="show" id="showIdeal" value="ideal"><label for="showIdeal">Ideal</label>
-            </span>
-          </span>
+        </div>
+        <span class="seg full" role="radiogroup" aria-label="Show">
+          <input type="radio" name="show" id="showBoth" value="both" checked><label for="showBoth">Both</label>
+          <input type="radio" name="show" id="showYou" value="you"><label for="showYou">You</label>
+          <input type="radio" name="show" id="showIdeal" value="ideal"><label for="showIdeal">Ideal</label>
+        </span>
+        <div class="crow toggles">
           <label class="chk"><input type="checkbox" id="trace" checked>Clubhead path</label>
           <label class="chk"><input type="checkbox" id="planes" checked>Planes</label>
         </div>
+        <hr class="csep">
         <div class="pcar" aria-label="Swing positions">
           <button type="button" class="pnav" id="phPrev" aria-label="Previous position"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M15 6l-6 6 6 6"/></svg></button>
           <div class="pmid"><b id="phName">Address</b><div class="pdots" id="phaseChips"></div></div>
