@@ -302,6 +302,27 @@ await test('a finished upload can be analyzed again from the ⋯ menu and from t
   await p.context().close();
 });
 
+await test('"You" is the same rig as the ideal: identical at address, same feet, smooth motion (no jitter)', async () => {
+  const p = await newPage(); await upload(p);
+  const r = await p.evaluate(() => {
+    const st = window.__swinglab.state, res = st.res, C = window.Core;
+    const a = C.youRigPose(res, st.keys, res.phases.address), b = C.idealPose(res.phases, res.phases.address, 1);
+    let dAddr = 0; for (const k of ['H', 'neck', 'P', 'lAnk', 'tAnk', 'club']) for (let i = 0; i < 3; i++) dAddr = Math.max(dAddr, Math.abs(a[k][i] - b[k][i]));
+    let feet = 0, jerk = 0, prev = null, prev2 = null;
+    for (let t = res.phases.address; t <= res.phases.finish; t += 1 / 60) {
+      const q = C.youRigPose(res, st.keys, t), qi = C.idealPose(res.phases, t, 1);
+      feet = Math.max(feet, Math.abs(q.lAnk[2] - qi.lAnk[2]), Math.abs(q.lAnk[0] - qi.lAnk[0]));
+      if (prev2) for (let i = 0; i < 3; i++) jerk = Math.max(jerk, Math.abs(q.lKnee[i] - 2 * prev.lKnee[i] + prev2.lKnee[i]));
+      prev2 = prev; prev = q;
+    }
+    return { dAddr, feet, jerk };
+  });
+  assert(r.dAddr < 0.005, 'figures differ at address by ' + r.dAddr);
+  assert(r.feet < 0.02, 'feet not on the same spot: ' + r.feet);
+  assert(r.jerk < 0.01, 'knee jitter ' + r.jerk);
+  await p.context().close();
+});
+
 await test('a non-video file is refused with a message', async () => {
   const p = await newPage();
   await pick(p, '#addEmpty', notVideo);

@@ -36,7 +36,7 @@ He swings left-handed. Proposal "A" (side drawer library) was the chosen UI.
 5. **Never commit swing videos or tracking dumps** (public repo). `.gitignore` blocks video files and `fixtures/`.
 
 ## Tests
-- `node scripts/e2e.mjs` — 20 checks with a mock tracker (`scripts/mock-tracker.js` builds MediaPipe-shaped data
+- `node scripts/e2e.mjs` — 21 checks with a mock tracker (`scripts/mock-tracker.js` builds MediaPipe-shaped data
   from the rig: lefty/righty, down-the-line/face-on, no-swing, error, slow).
 - `node scripts/realrun.mjs <clip.webm> <outdir> [second.webm]` — the whole app on a real clip (local only).
 - `node scripts/track.mjs <clip> <out.json>` + `node scripts/analyze.js <out.json>` — tracker + core on real clips.
@@ -55,6 +55,10 @@ He swings left-handed. Proposal "A" (side drawer library) was the chosen UI.
 - Far (lead) leg wobbled and the shins crossed (Nov 6, lefty down the line): `stabilize()` = median-5 + visibility-
   weighted zero-phase Gaussian (legs strong, hands light), feet pinned (lead → finish, trail → impact), knees
   rebuilt from fixed thigh/shin lengths and forced to bend toward the ball. Leg jitter down ~60–90%, metrics unchanged.
+- Nov 6: drawing the raw tracked joints looked jittery, off-proportion and "on a different plane" from the ideal.
+  The wireframe now draws **both figures with the rig**: `Core.fitRig` turns the measurements at the 9 positions into
+  rig keyframes (hand path in the image plane + club angle + spine tilt + hip shift, all relative to your own address;
+  depth/turns kept from the ideal) and `youRigPose` blends them like the artifact did. Raw joints only feed metrics.
 - Safari copies canvas-to-canvas lazily: each head gets its own scratch canvas (else heads show another view's face).
 
 ## Working style (user: Thomas)

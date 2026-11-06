@@ -264,12 +264,12 @@ function loadSwing(i) {
   state.res = r;
   state.tStart = Math.max(r.frames[0].t, r.phases.address - 0.3);
   state.tEnd = Math.min(r.frames[r.frames.length - 1].t, r.phases.finish + 0.7);
-  state.scale = Math.max(0.85, Math.min(1.15, (r.stature || 1.75) / 1.75));
-  state.clubLen = Rig.CLUB_LEN * state.scale;
-  const a = Core.youAt(r, r.phases.address).j;
-  const clubA = V.add(a.H, V.mul(Core.youAt(r, r.phases.address).club.dir, state.clubLen));
-  state.ball = [clubA[0], 0.021, clubA[2]];
-  state.addr = { hands: a.H, neck: V.mul(V.add(a.lSh, a.tSh), 0.5) };
+  // both figures are the same rig (see Core.fitRig): same body, feet, ball and ground
+  state.scale = 1; state.clubLen = Rig.CLUB_LEN;
+  state.keys = Core.fitRig(r);
+  const a = Rig.pose(Rig.sample(Rig.IDEAL, 0));
+  state.ball = Rig.BALL;
+  state.addr = { hands: a.H, neck: a.neck };
   state.mirror = r.view === 'dtl' ? { bs: r.ballSide, ts: r.ballSide } : { bs: r.targetSide, ts: r.targetSide };
   state.leadAnkleX = a.lAnk[0];
   state.paths = buildPaths();
@@ -286,8 +286,8 @@ function clampT(t) { return Math.max(state.tStart, Math.min(state.tEnd, t)); }
 function buildPaths() {
   const r = state.res, out = { you: [], ideal: [], ghost: [] };
   for (let t = state.tStart; t <= state.tEnd + 1e-6; t += 1 / 60) {
-    const y = Core.youAt(r, t); out.you.push({ t, p: V.add(y.j.H, V.mul(y.club.dir, state.clubLen)) });
-    out.ideal.push({ t, p: Core.idealPose(r.phases, t, state.scale).club });
+    out.you.push({ t, p: Core.youRigPose(r, state.keys, t).club });
+    out.ideal.push({ t, p: Core.idealPose(r.phases, t, 1).club });
     if (state.ghost) { const g = ghostAt(t); if (g) out.ghost.push({ t, p: g.club }); }
   }
   return out;
@@ -295,8 +295,8 @@ function buildPaths() {
 function ghostAt(t) {
   const g = state.ghost; if (!g) return null;
   const tg = mapTime(state.res.phases, g.res.phases, t);
-  const y = Core.youAt(g.res, tg);
-  return youToQ(y.j, y.club, state.clubLen);
+  if (!g.keys) g.keys = Core.fitRig(g.res);
+  return Core.youRigPose(g.res, g.keys, tg);
 }
 function mapTime(pa, pb, t) {
   const ks = Core.PH;
@@ -313,9 +313,8 @@ function leadPct(q) { const a = q.lAnk[0], b = q.tAnk[0], p = (q.lHip[0] + q.tHi
 
 function render() {
   const r = state.res; if (!r || $('session').hidden) return;
-  const y = Core.youAt(r, state.t);
-  const qYou = youToQ(y.j, y.club, state.clubLen);
-  const qIdeal = Core.idealPose(r.phases, state.t, state.scale);
+  const qYou = Core.youRigPose(r, state.keys, state.t);
+  const qIdeal = Core.idealPose(r.phases, state.t, 1);
   const qGhost = state.ghost ? ghostAt(state.t) : null;
   const s = {
     q: { you: qYou, ideal: qIdeal, ghost: qGhost }, paths: state.paths, t: state.t, show: state.show, trace: state.trace,
@@ -491,7 +490,7 @@ async function renderGhostBar() {
   const o = await store.getSession(state.ghost.id);
   const sel = el('select', { 'aria-label': 'Swing to compare', style: 'min-height:36px;border-radius:8px;border:1px solid var(--line);background:var(--chip);color:var(--ink);font:600 14px var(--f-body);padding:0 8px' },
     ...o.swings.map((_, i) => el('option', { value: i, selected: i === state.ghost.swing }, `Swing ${i + 1}`)));
-  sel.addEventListener('change', () => { state.ghost.swing = +sel.value; state.ghost.res = o.swings[+sel.value]; state.paths = buildPaths(); render(); });
+  sel.addEventListener('change', () => { state.ghost.swing = +sel.value; state.ghost.res = o.swings[+sel.value]; state.ghost.keys = null; state.paths = buildPaths(); render(); });
   bar.append(el('span', {}, 'Comparing with ', el('b', {}, o.title)), sel, el('button', { type: 'button', style: 'margin-left:auto', onclick: () => stopCompare() }, 'Stop comparing'));
 }
 

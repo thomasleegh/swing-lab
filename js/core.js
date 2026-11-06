@@ -499,7 +499,35 @@ function youAt(res, t) {
   return { j, club: { dir: V.norm(lerp3(a.club.dir, b.club.dir, u)), conf: lerp(a.club.conf, b.club.conf, u) } };
 }
 
-const Core = { findSwings, analyzeSwing, clubPath, idealPose, idealAt, idealTime, youAt, measure, notesFor, summarize, planesImg, gripN, handHeight, spineTilt, PH, IDEAL_TEXT };
+// ---------- 8. "You" as the rig (same model as the ideal, driven by what was measured) ----------
+// The drawn figure is the ideal rig with the measured differences applied at the 9 positions, then blended
+// with the rig's own smooth interpolation. Both figures share body, feet, ball and ground, and match at address.
+// Measured (relative to your own address): hand path in the camera's image plane, club angle, spine tilt,
+// hips toward/away from the ball (down the line) or toward/away from the target (face-on).
+// Not measured from one camera, so kept from the ideal: depth of the hands, hip and chest turn, side bend.
+function fitRig(res) {
+  const F = res.frames, I = res.idx, dtl = res.view === 'dtl';
+  const avg = (ph, fn) => {
+    const i = I[ph], pts = [i - 1, i, i + 1].filter((x) => x >= 0 && x < F.length).map((x) => fn(F[x]));
+    if (typeof pts[0] === 'number') return mean(pts);
+    return [0, 1, 2].map((a) => mean(pts.map((p) => p[a])));
+  };
+  const pel = (f) => V.mul(V.add(f.j.lHip, f.j.tHip), 0.5);
+  const H0 = R.IDEAL[0].H, hA = avg('address', (f) => f.j.H), pA = avg('address', pel), tA = avg('address', (f) => spineTilt(f.j));
+  return PH.map((ph, n) => {
+    const id = R.IDEAL[n], k = { ...id, H: id.H.slice(), C: id.C && id.C.slice() };
+    const dH = V.sub(avg(ph, (f) => f.j.H), hA), dP = V.sub(avg(ph, pel), pA);
+    k.H = dtl ? [id.H[0], H0[1] + dH[1], H0[2] + dH[2]] : [H0[0] + dH[0], H0[1] + dH[1], id.H[2]];
+    k.tilt = clamp(id.tilt + (avg(ph, (f) => spineTilt(f.j)) - tA), 0, 60);
+    if (dtl) k.pz = R.IDEAL[0].pz + dP[2]; else k.px = R.IDEAL[0].px + dP[0];
+    if (ph === 'address' || ph === 'impact') k.C = null;           // the club is at the ball
+    else k.C = V.norm(avg(ph, (f) => f.club.dir));
+    return k;
+  });
+}
+function youRigPose(res, keys, t) { return R.pose(R.sample(keys, clamp(idealTime(res.phases, t), 0, R.PHASES[R.PHASES.length - 1].t))); }
+
+const Core = { fitRig, youRigPose, findSwings, analyzeSwing, clubPath, idealPose, idealAt, idealTime, youAt, measure, notesFor, summarize, planesImg, gripN, handHeight, spineTilt, PH, IDEAL_TEXT };
 if (typeof module !== 'undefined') module.exports = Core;
 if (typeof globalThis !== 'undefined') globalThis.Core = Core;
 })();
