@@ -36,7 +36,7 @@ He swings left-handed. Proposal "A" (side drawer library) was the chosen UI.
 5. **Never commit swing videos or tracking dumps** (public repo). `.gitignore` blocks video files and `fixtures/`.
 
 ## Tests
-- `node scripts/e2e.mjs` — 24 checks with a mock tracker (`scripts/mock-tracker.js` builds MediaPipe-shaped data
+- `node scripts/e2e.mjs` — 25 checks with a mock tracker (`scripts/mock-tracker.js` builds MediaPipe-shaped data
   from the rig: lefty/righty, down-the-line/face-on, no-swing, error, slow).
 - `node scripts/realrun.mjs <clip.webm> <outdir> [second.webm]` — the whole app on a real clip (local only).
 - `node scripts/track.mjs <clip> <out.json>` + `node scripts/analyze.js <out.json>` — tracker + core on real clips.
@@ -65,6 +65,10 @@ He swings left-handed. Proposal "A" (side drawer library) was the chosen UI.
   top, accelerate to impact) pinned at address/top/impact/finish; You = speed of your tracked hands over the same 3
   stretches, clock smoothed 30 ms, plus a smoothed hand-route correction in the camera plane (hand error ~6 → ~2 cm).
   Don't time You over the 9 short segments (delivery→impact can be 1 frame → jumps). `idealAt` (analysis) unchanged.
+- Nov 6: arms looked behind/in front of the head at the top and finish. Two causes: (a) `fitRig` added your tilt
+  change to the ideal's tilt *at that position* (double counted) → head thrown ~30 cm back at the finish; now based
+  on the ideal's address tilt (head error 28–40 → 3–9 cm). (b) `drawFigure` drew the head and club last regardless of
+  depth; now one depth-sorted list (limbs/shaft split into pieces, joints, head).
 - Safari copies canvas-to-canvas lazily: each head gets its own scratch canvas (else heads show another view's face).
 
 ## Working style (user: Thomas)

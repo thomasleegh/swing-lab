@@ -349,6 +349,19 @@ await test('tempo: ideal builds smoothly, rests at the top, speeds up to impact;
   await p.context().close();
 });
 
+await test('"You" head follows the tracked head through the finish (spine-tilt change not counted twice)', async () => {
+  const p = await newPage(); await upload(p);
+  const worst = await p.evaluate(() => {
+    const st = window.__swinglab.state, res = st.res, C = window.Core, F = res.frames, I = res.idx;
+    const e0 = F[I.address].j.ear, q0 = C.youRigPose(res, st.keys, F[I.address].t); let w = 0;
+    for (const ph of C.PH) { const f = F[I[ph]], q = C.youRigPose(res, st.keys, f.t);
+      w = Math.max(w, Math.hypot((f.j.ear[1] - e0[1]) - (q.head[1] - q0.head[1]), (f.j.ear[2] - e0[2]) - (q.head[2] - q0.head[2]))); }
+    return w;
+  });
+  assert(worst < 0.12, '"You" head off the tracked head by ' + Math.round(worst * 100) + ' cm');
+  await p.context().close();
+});
+
 await test('position carousel: arrows and dots step through the 9 positions; planes toggle on and off', async () => {
   const p = await newPage(); await upload(p);
   assert((await p.$$('#phaseChips button')).length === 9, 'dots');

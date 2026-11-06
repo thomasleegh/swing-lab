@@ -518,7 +518,9 @@ function fitRig(res) {
     const id = R.IDEAL[n], k = { ...id, H: id.H.slice(), C: id.C && id.C.slice() };
     const dH = V.sub(avg(ph, (f) => f.j.H), hA), dP = V.sub(avg(ph, pel), pA);
     k.H = dtl ? [id.H[0], H0[1] + dH[1], H0[2] + dH[2]] : [H0[0] + dH[0], H0[1] + dH[1], id.H[2]];
-    k.tilt = clamp(id.tilt + (avg(ph, (f) => spineTilt(f.j)) - tA), 0, 60);
+    // your change in spine tilt since address, on top of the ideal's ADDRESS tilt (not this position's: that
+    // counted the change twice and threw the head ~30 cm back at the finish)
+    k.tilt = clamp(R.IDEAL[0].tilt + (avg(ph, (f) => spineTilt(f.j)) - tA), 0, 60);
     if (dtl) k.pz = R.IDEAL[0].pz + dP[2]; else k.px = R.IDEAL[0].px + dP[0];
     if (ph === 'address' || ph === 'impact') k.C = null;           // the club is at the ball
     else k.C = V.norm(avg(ph, (f) => f.club.dir));

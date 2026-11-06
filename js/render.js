@@ -40,16 +40,25 @@ export function drawFigure(ctx, view, q, W, H, k, color, alpha, bold, key, dashe
   ctx.save(); ctx.globalAlpha = alpha; ctx.strokeStyle = color; ctx.fillStyle = color; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
   if (dashed) ctx.setLineDash([k * 0.035, k * 0.025]);
   const lw = k * (bold ? 0.028 : 0.024);
-  const list = SEGS.map(([a, b]) => ({ a: q[a], b: q[b], d: (view.dist(q[a]) + view.dist(q[b])) / 2 })).sort((u, v) => v.d - u.d);
-  for (const s of list) { const a = P(s.a), b = P(s.b); ctx.lineWidth = lw; ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.stroke(); }
-  for (const jn of ['lElb', 'tElb', 'lKnee', 'tKnee', 'lSh', 'tSh', 'lHip', 'tHip']) { const p = P(q[jn]); ctx.beginPath(); ctx.arc(p[0], p[1], lw * 0.62, 0, Math.PI * 2); ctx.fill(); }
-  const g = P(q.H), ch = P(q.club);
-  ctx.lineWidth = lw * 0.45; ctx.beginPath(); ctx.moveTo(g[0], g[1]); ctx.lineTo(ch[0], ch[1]); ctx.stroke();
+  // One depth-sorted list (far first) for limbs, joints, club and head, so whichever is nearer the camera is drawn
+  // on top. Drawing the head last made the arms look like they were behind it at the top and finish.
+  // Limbs and the shaft are split into short pieces so a long segment that passes the head sorts correctly.
+  const items = [], lerpP = (a, b, u) => [a[0] + (b[0] - a[0]) * u, a[1] + (b[1] - a[1]) * u, a[2] + (b[2] - a[2]) * u];
+  const seg = (a, b, n, w) => { for (let i = 0; i < n; i++) { const pa = lerpP(a, b, i / n), pb = lerpP(a, b, (i + 1) / n); items.push({ d: (view.dist(pa) + view.dist(pb)) / 2, draw: () => { const x = P(pa), y = P(pb); ctx.lineWidth = w; ctx.beginPath(); ctx.moveTo(x[0], x[1]); ctx.lineTo(y[0], y[1]); ctx.stroke(); } }); } };
+  const dot = (p, r) => items.push({ d: view.dist(p) - 1e-4, draw: () => { const c = P(p); ctx.beginPath(); ctx.arc(c[0], c[1], r, 0, Math.PI * 2); ctx.fill(); } });
+  for (const [a, b] of SEGS) seg(q[a], q[b], 3, lw);
+  for (const jn of ['lElb', 'tElb', 'lKnee', 'tKnee', 'lSh', 'tSh', 'lHip', 'tHip']) dot(q[jn], lw * 0.62);
+  seg(q.H, q.club, 6, lw * 0.45);
+  dot(q.club, lw * 0.9); dot(q.H, lw * 0.75);
+  items.push({ d: view.dist(q.head), draw: () => {
+    ctx.setLineDash([]);
+    if (!dashed) drawHead(ctx, view, q, P, k, color, key);
+    else { const c = P(q.head); ctx.lineWidth = lw * 0.7; ctx.beginPath(); ctx.arc(c[0], c[1], k * 0.11, 0, Math.PI * 2); ctx.stroke(); }
+    if (dashed) ctx.setLineDash([k * 0.035, k * 0.025]);
+  } });
+  items.sort((u, v) => v.d - u.d);
+  for (const it of items) it.draw();
   ctx.setLineDash([]);
-  ctx.beginPath(); ctx.arc(ch[0], ch[1], lw * 0.9, 0, Math.PI * 2); ctx.fill();
-  ctx.beginPath(); ctx.arc(g[0], g[1], lw * 0.75, 0, Math.PI * 2); ctx.fill();
-  if (!dashed) drawHead(ctx, view, q, P, k, color, key);
-  else { const c = P(q.head); ctx.lineWidth = lw * 0.7; ctx.beginPath(); ctx.arc(c[0], c[1], k * 0.11, 0, Math.PI * 2); ctx.stroke(); }
   ctx.restore();
 }
 
