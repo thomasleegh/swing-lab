@@ -275,7 +275,7 @@ function loadSwing(i) {
   state.paths = buildPaths();
   state.t = clampT(state.t || r.phases.transition);
   if (state.t <= state.tStart || state.t >= state.tEnd) state.t = r.phases[r.mainFault?.phase || 'top'];
-  renderSwingChips(); renderPhaseChips(); renderTags(); renderKeyframes(); renderMetrics(); renderGhostBar();
+  renderSwingChips(); renderPhaseChips(); setTimeout(syncFab, 0); renderTags(); renderKeyframes(); renderMetrics(); renderGhostBar();
   $('dtlNote').textContent = r.view === 'dtl' ? 'tracked from your video' : 'rebuilt from your face-on video';
   $('foNote').textContent = r.view === 'faceon' ? 'tracked from your video' : 'rebuilt from your down-the-line video';
   $('foCap').textContent = r.view === 'faceon' ? 'Bars show pressure on the lead foot: ideal and yours (estimated from hip position).' : 'Bar shows the ideal pressure on the lead foot. Your weight shift needs a face-on video to measure.';
@@ -332,7 +332,7 @@ function render() {
   for (const e of document.querySelectorAll('input.pos')) e.value = v;
   for (const e of document.querySelectorAll('.vph')) e.textContent = PHASE_NAMES[ph];
   for (const b of document.querySelectorAll('#phaseChips button')) b.setAttribute('aria-pressed', b.dataset.id === ph ? 'true' : 'false');
-  $('phName').textContent = PHASE_NAMES[ph]; $('fabPh').textContent = PHASE_NAMES[ph];
+  $('phName').textContent = PHASE_NAMES[ph];
   const ids = Core.PH; $('phPrev').disabled = ph === ids[0] && state.t <= r.phases[ids[0]] + 1e-3; $('phNext').disabled = ph === ids[ids.length - 1] && state.t >= r.phases[ids[ids.length - 1]] - 1e-3;
 }
 
@@ -514,13 +514,13 @@ function tick(now) {
   render(); requestAnimationFrame(tick);
 }
 function setPlay(on) { state.playing = on; $('play').textContent = on ? 'Pause' : 'Play'; syncFab(); if (on) { if (state.t >= state.tEnd - 1e-3) state.t = state.tStart; holdT = 0; lastTs = performance.now(); requestAnimationFrame(tick); } }
-// Floating play button: shown whenever the card's Play button is scrolled out of view.
+// Floating play button: always on screen while a swing is shown (hidden only behind the open drawer).
 let playVisible = true;
 function syncFab() {
-  const f = $('fab'), show = !playVisible && !$('session').hidden && !!state.res && !$('drawer').classList.contains('on');
+  const f = $('fab'), show = !$('session').hidden && !!state.res && !$('drawer').classList.contains('on');
   f.hidden = !show;
-  f.querySelector('.ico-play').toggleAttribute('hidden', state.playing); f.querySelector('.ico-pause').toggleAttribute('hidden', !state.playing);
-  f.setAttribute('aria-label', state.playing ? 'Pause' : 'Play');
+  f.classList.toggle('on', state.playing);
+  f.setAttribute('aria-label', state.playing ? 'Pause' : 'Play from the start');
 }
 function stopPlay() { if (state.playing) setPlay(false); }
 
@@ -532,7 +532,7 @@ document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && $('drawe
 for (const id of ['addTop', 'addDrawer', 'addEmpty']) $(id).addEventListener('click', () => { $('file').value = ''; $('file').click(); });
 $('file').addEventListener('change', (e) => addFile(e.target.files && e.target.files[0]));
 $('play').addEventListener('click', () => setPlay(!state.playing));
-$('fab').addEventListener('click', () => setPlay(!state.playing));
+$('fab').addEventListener('click', () => { if (state.playing) setPlay(false); else { state.t = state.tStart; setPlay(true); } });
 try { new IntersectionObserver((es) => { playVisible = es[0].isIntersecting; syncFab(); }, { rootMargin: '-70px 0px 0px 0px' }).observe($('play')); } catch (e) {}
 for (const r of document.querySelectorAll('input.pos')) r.addEventListener('input', (e) => { stopPlay(); state.t = state.tStart + (state.tEnd - state.tStart) * e.target.value / 1000; render(); });
 for (const r of document.querySelectorAll('input[name=spd]')) r.addEventListener('change', (e) => { state.speed = +e.target.value; });

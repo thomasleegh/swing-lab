@@ -49,7 +49,7 @@ svg.i{width:22px;height:22px;stroke:currentColor;fill:none;stroke-width:2;stroke
 .ttl{flex:1;min-width:0;display:flex;flex-direction:column}
 .ttl b{font-family:var(--f-display);font-weight:700;font-size:24px;line-height:1.05;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .ttl span{font-size:12.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-main{max-width:1080px;margin:0 auto;padding:6px max(16px,env(safe-area-inset-right,0px)) calc(40px + env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-left,0px));display:grid;gap:14px}
+main{max-width:1080px;margin:0 auto;padding:6px max(16px,env(safe-area-inset-right,0px)) calc(100px + env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-left,0px));display:grid;gap:14px}
 
 /* drawer */
 .scrim{position:fixed;inset:0;background:var(--scrim);z-index:20;opacity:0;transition:opacity .22s}
@@ -164,9 +164,14 @@ dialog::backdrop{background:var(--scrim)}
 .dlg canvas{width:100%;aspect-ratio:3/4;display:block;background:#1b2723;max-height:70vh}
 .dlg .row{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:10px 12px}
 .dlg p{margin:0 14px 14px}
-.fab{position:fixed;z-index:15;right:max(16px,env(safe-area-inset-right,0px));bottom:calc(16px + env(safe-area-inset-bottom,0px));min-height:52px;padding:0 18px 0 16px;border-radius:26px;background:var(--ink);color:var(--panel);border-color:var(--ink);box-shadow:0 6px 20px rgba(0,0,0,.25);font:600 16px var(--f-body);gap:10px}
-.fab span{font-family:var(--f-display);font-size:18px;font-weight:700;letter-spacing:.01em}
-.toast{bottom:calc(84px + env(safe-area-inset-bottom,0px))!important}
+.fab{position:fixed;z-index:15;right:max(16px,env(safe-area-inset-right,0px));bottom:calc(16px + env(safe-area-inset-bottom,0px));width:60px;height:60px;min-height:60px;padding:0;border-radius:50%;background:var(--ink);color:var(--panel);border-color:var(--ink);box-shadow:0 6px 20px rgba(0,0,0,.28)}
+.fab svg{width:26px;height:26px}
+.fab g{fill:currentColor;transform-origin:12px 12px;transition:opacity .2s ease,transform .25s ease}
+.fab .gpause{opacity:0;transform:rotate(-90deg) scale(.6)}
+.fab.on .gplay{opacity:0;transform:rotate(90deg) scale(.6)}
+.fab.on .gpause{opacity:1;transform:none}
+@media (prefers-reduced-motion:reduce){.fab g{transition:none}}
+.toast{bottom:calc(88px + env(safe-area-inset-bottom,0px))!important}
 .toast{position:fixed;left:50%;bottom:calc(24px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--ink);color:var(--panel);padding:10px 16px;border-radius:10px;font-weight:600;z-index:40;max-width:90vw}
 </style>
 </head>
@@ -278,10 +283,8 @@ dialog::backdrop{background:var(--scrim)}
   <canvas id="dlgCv"></canvas>
   <p id="dlgText"></p>
 </div></dialog>
-<button type="button" class="fab" id="fab" hidden aria-label="Play">
-  <svg class="i ico-play" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5l11 7-11 7z" style="fill:currentColor;stroke:none"/></svg>
-  <svg class="i ico-pause" viewBox="0 0 24 24" aria-hidden="true" hidden><path d="M8 5v14M16 5v14" style="stroke-width:3"/></svg>
-  <span id="fabPh"></span>
+<button type="button" class="fab" id="fab" hidden aria-label="Play from the start">
+  <svg viewBox="0 0 24 24" aria-hidden="true"><g class="gplay"><path d="M8 5 L19 12 L8 19 Z"/></g><g class="gpause"><rect x="6.5" y="5" width="4" height="14" rx="1"/><rect x="13.5" y="5" width="4" height="14" rx="1"/></g></svg>
 </button>
 <div class="toast" id="toast" hidden role="status"></div>
 

@@ -346,23 +346,27 @@ await test('position carousel: arrows and dots step through the 9 positions; pla
   await p.context().close();
 });
 
-await test('floating play button follows the scroll and controls playback', async () => {
+await test('round play button is always on screen, restarts the swing, morphs to pause', async () => {
   const p = await newPage(); await upload(p);
-  assert(await p.isHidden('#fab'), 'fab should be hidden while Play is on screen');
+  await p.waitForTimeout(200);
+  assert(await p.isVisible('#fab'), 'fab should be on screen at the top');
   await p.evaluate(() => document.getElementById('kf').scrollIntoView()); await p.waitForTimeout(300);
   assert(await p.isVisible('#fab'), 'fab not shown after scrolling');
   const box = await p.evaluate(() => { const r = document.getElementById('fab').getBoundingClientRect(); return { b: r.bottom, r: r.right, h: r.height }; });
   assert(box.b <= 844 && box.r <= 390 && box.h >= 44, JSON.stringify(box));
-  await p.click('#fab'); await p.waitForTimeout(400);
-  assert(await p.evaluate(() => window.__swinglab.state.playing), 'not playing');
-  assert((await p.getAttribute('#fab', 'aria-label')) === 'Pause');
-  assert((await p.textContent('#fabPh')).length > 2, 'no position label');
+  assert(Math.abs(box.h - (await p.evaluate(() => document.getElementById('fab').getBoundingClientRect().width))) < 1, 'fab is not a circle');
+  await p.evaluate(() => { const st = window.__swinglab.state; st.t = st.res.phases.impact; window.__swinglab.render(); });
+  await p.click('#fab'); await p.waitForTimeout(150);
+  const st = await p.evaluate(() => { const s = window.__swinglab.state; return { playing: s.playing, t: s.t, start: s.tStart, top: s.res.phases.top }; });
+  assert(st.playing, 'not playing');
+  assert(st.t < st.top, `play should restart from the beginning (t=${st.t}, start=${st.start})`);
+  assert((await p.getAttribute('#fab', 'aria-label')) === 'Pause' && await p.evaluate(() => document.getElementById('fab').classList.contains('on')), 'icon did not switch to pause');
   await p.click('#fab'); assert(!(await p.evaluate(() => window.__swinglab.state.playing)), 'did not pause');
   await p.click('#menuBtn').catch(() => {}); await p.waitForTimeout(300);
   assert(await p.isHidden('#fab'), 'fab should hide behind the open drawer');
   await p.keyboard.press('Escape'); await p.waitForTimeout(300);
   await p.evaluate(() => window.scrollTo(0, 0)); await p.waitForTimeout(300);
-  assert(await p.isHidden('#fab'), 'fab should hide again at the top');
+  assert(await p.isVisible('#fab'), 'fab should stay on screen after the drawer closes');
   await p.context().close();
 });
 
