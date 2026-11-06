@@ -164,6 +164,9 @@ dialog::backdrop{background:var(--scrim)}
 .dlg canvas{width:100%;aspect-ratio:3/4;display:block;background:#1b2723;max-height:70vh}
 .dlg .row{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:10px 12px}
 .dlg p{margin:0 14px 14px}
+.fab{position:fixed;z-index:15;right:max(16px,env(safe-area-inset-right,0px));bottom:calc(16px + env(safe-area-inset-bottom,0px));min-height:52px;padding:0 18px 0 16px;border-radius:26px;background:var(--ink);color:var(--panel);border-color:var(--ink);box-shadow:0 6px 20px rgba(0,0,0,.25);font:600 16px var(--f-body);gap:10px}
+.fab span{font-family:var(--f-display);font-size:18px;font-weight:700;letter-spacing:.01em}
+.toast{bottom:calc(84px + env(safe-area-inset-bottom,0px))!important}
 .toast{position:fixed;left:50%;bottom:calc(24px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--ink);color:var(--panel);padding:10px 16px;border-radius:10px;font-weight:600;z-index:40;max-width:90vw}
 </style>
 </head>
@@ -275,6 +278,11 @@ dialog::backdrop{background:var(--scrim)}
   <canvas id="dlgCv"></canvas>
   <p id="dlgText"></p>
 </div></dialog>
+<button type="button" class="fab" id="fab" hidden aria-label="Play">
+  <svg class="i ico-play" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5l11 7-11 7z" style="fill:currentColor;stroke:none"/></svg>
+  <svg class="i ico-pause" viewBox="0 0 24 24" aria-hidden="true" hidden><path d="M8 5v14M16 5v14" style="stroke-width:3"/></svg>
+  <span id="fabPh"></span>
+</button>
 <div class="toast" id="toast" hidden role="status"></div>
 
 <script src="js/rig.js"></script>

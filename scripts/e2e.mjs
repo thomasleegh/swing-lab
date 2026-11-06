@@ -346,6 +346,26 @@ await test('position carousel: arrows and dots step through the 9 positions; pla
   await p.context().close();
 });
 
+await test('floating play button follows the scroll and controls playback', async () => {
+  const p = await newPage(); await upload(p);
+  assert(await p.isHidden('#fab'), 'fab should be hidden while Play is on screen');
+  await p.evaluate(() => document.getElementById('kf').scrollIntoView()); await p.waitForTimeout(300);
+  assert(await p.isVisible('#fab'), 'fab not shown after scrolling');
+  const box = await p.evaluate(() => { const r = document.getElementById('fab').getBoundingClientRect(); return { b: r.bottom, r: r.right, h: r.height }; });
+  assert(box.b <= 844 && box.r <= 390 && box.h >= 44, JSON.stringify(box));
+  await p.click('#fab'); await p.waitForTimeout(400);
+  assert(await p.evaluate(() => window.__swinglab.state.playing), 'not playing');
+  assert((await p.getAttribute('#fab', 'aria-label')) === 'Pause');
+  assert((await p.textContent('#fabPh')).length > 2, 'no position label');
+  await p.click('#fab'); assert(!(await p.evaluate(() => window.__swinglab.state.playing)), 'did not pause');
+  await p.click('#menuBtn').catch(() => {}); await p.waitForTimeout(300);
+  assert(await p.isHidden('#fab'), 'fab should hide behind the open drawer');
+  await p.keyboard.press('Escape'); await p.waitForTimeout(300);
+  await p.evaluate(() => window.scrollTo(0, 0)); await p.waitForTimeout(300);
+  assert(await p.isHidden('#fab'), 'fab should hide again at the top');
+  await p.context().close();
+});
+
 await test('a non-video file is refused with a message', async () => {
   const p = await newPage();
   await pick(p, '#addEmpty', notVideo);

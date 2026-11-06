@@ -31,7 +31,7 @@ function newId() { return 's' + Date.now().toString(36) + Math.random().toString
 
 // ---------- drawer ----------
 function openDrawer(on) {
-  const d = $('drawer'), s = $('scrim');
+  const d = $('drawer'), s = $('scrim'); setTimeout(syncFab, 0);
   if (on) { s.hidden = false; requestAnimationFrame(() => { s.classList.add('on'); d.classList.add('on'); }); d.removeAttribute('inert'); d.setAttribute('aria-hidden', 'false'); $('menuBtn').setAttribute('aria-expanded', 'true'); renderList(); setTimeout(() => $('addDrawer').focus(), 50); }
   else { s.classList.remove('on'); d.classList.remove('on'); d.setAttribute('inert', ''); d.setAttribute('aria-hidden', 'true'); $('menuBtn').setAttribute('aria-expanded', 'false'); setTimeout(() => { if (!d.classList.contains('on')) s.hidden = true; }, 260); }
 }
@@ -332,7 +332,7 @@ function render() {
   for (const e of document.querySelectorAll('input.pos')) e.value = v;
   for (const e of document.querySelectorAll('.vph')) e.textContent = PHASE_NAMES[ph];
   for (const b of document.querySelectorAll('#phaseChips button')) b.setAttribute('aria-pressed', b.dataset.id === ph ? 'true' : 'false');
-  $('phName').textContent = PHASE_NAMES[ph];
+  $('phName').textContent = PHASE_NAMES[ph]; $('fabPh').textContent = PHASE_NAMES[ph];
   const ids = Core.PH; $('phPrev').disabled = ph === ids[0] && state.t <= r.phases[ids[0]] + 1e-3; $('phNext').disabled = ph === ids[ids.length - 1] && state.t >= r.phases[ids[ids.length - 1]] - 1e-3;
 }
 
@@ -513,7 +513,15 @@ function tick(now) {
   else { state.t += dt * state.speed; if (state.t >= state.tEnd) { state.t = state.tEnd; holdT = 1.0; } }
   render(); requestAnimationFrame(tick);
 }
-function setPlay(on) { state.playing = on; $('play').textContent = on ? 'Pause' : 'Play'; if (on) { if (state.t >= state.tEnd - 1e-3) state.t = state.tStart; holdT = 0; lastTs = performance.now(); requestAnimationFrame(tick); } }
+function setPlay(on) { state.playing = on; $('play').textContent = on ? 'Pause' : 'Play'; syncFab(); if (on) { if (state.t >= state.tEnd - 1e-3) state.t = state.tStart; holdT = 0; lastTs = performance.now(); requestAnimationFrame(tick); } }
+// Floating play button: shown whenever the card's Play button is scrolled out of view.
+let playVisible = true;
+function syncFab() {
+  const f = $('fab'), show = !playVisible && !$('session').hidden && !!state.res && !$('drawer').classList.contains('on');
+  f.hidden = !show;
+  f.querySelector('.ico-play').toggleAttribute('hidden', state.playing); f.querySelector('.ico-pause').toggleAttribute('hidden', !state.playing);
+  f.setAttribute('aria-label', state.playing ? 'Pause' : 'Play');
+}
 function stopPlay() { if (state.playing) setPlay(false); }
 
 // ---------- wiring ----------
@@ -524,6 +532,8 @@ document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && $('drawe
 for (const id of ['addTop', 'addDrawer', 'addEmpty']) $(id).addEventListener('click', () => { $('file').value = ''; $('file').click(); });
 $('file').addEventListener('change', (e) => addFile(e.target.files && e.target.files[0]));
 $('play').addEventListener('click', () => setPlay(!state.playing));
+$('fab').addEventListener('click', () => setPlay(!state.playing));
+try { new IntersectionObserver((es) => { playVisible = es[0].isIntersecting; syncFab(); }, { rootMargin: '-70px 0px 0px 0px' }).observe($('play')); } catch (e) {}
 for (const r of document.querySelectorAll('input.pos')) r.addEventListener('input', (e) => { stopPlay(); state.t = state.tStart + (state.tEnd - state.tStart) * e.target.value / 1000; render(); });
 for (const r of document.querySelectorAll('input[name=spd]')) r.addEventListener('change', (e) => { state.speed = +e.target.value; });
 for (const r of document.querySelectorAll('input[name=show]')) r.addEventListener('change', (e) => { state.show = e.target.value; render(); });
