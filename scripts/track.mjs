@@ -8,12 +8,12 @@ import { serve } from './serve.mjs';
 const require = createRequire(import.meta.url);
 const { chromium } = require('playwright');
 const ROOT = path.join(path.dirname(new URL(import.meta.url).pathname), '..');
-const [video, out] = process.argv.slice(2);
+const [video, out, zoom = ""] = process.argv.slice(2);   // zoom: comma-separated impact times to re-track zoomed in
 const { server, base } = serve([['/__fx/', path.dirname(path.resolve(video))], ['/', ROOT]]);
 const b = await chromium.launch();
 const p = await b.newPage();
 p.on('pageerror', (e) => console.error('pageerror', e.message));
-await p.goto(`${base}scripts/track-harness.html?file=/__fx/${encodeURIComponent(path.basename(video))}`);
+await p.goto(`${base}scripts/track-harness.html?file=/__fx/${encodeURIComponent(path.basename(video))}&zoom=${zoom}`);
 const t0 = Date.now();
 await p.waitForFunction(() => window.__out && window.__out.done, null, { timeout: 30 * 60 * 1000, polling: 1000 });
 const o = await p.evaluate(() => window.__out);

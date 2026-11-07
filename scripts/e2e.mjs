@@ -362,6 +362,45 @@ await test('"You" head follows the tracked head through the finish (spine-tilt c
   await p.context().close();
 });
 
+await test('tracking check: 9 frames with the figure on the video; challenge club, moment and body; regenerate applies them', async () => {
+  const p = await newPage(); await upload(p);
+  await p.waitForTimeout(800);
+  assert((await p.$$('#tcar figure')).length === 9, '9 slides');
+  assert(await inkPixels(p, '#tcar figure:nth-child(1) canvas') > 2000, 'first slide drawn');
+  await p.click('#tcNext'); await p.click('#tcNext'); await p.click('#tcNext'); await p.waitForTimeout(900);
+  assert((await p.textContent('#tcPos')).startsWith('Top'), 'three steps land on Top: ' + await p.textContent('#tcPos'));
+  // club: tap a clubhead, save
+  await p.click('#tcChallenge'); await p.click('#chPick button[data-k="club"]'); await p.waitForTimeout(300);
+  assert(await p.isDisabled('#chSave'), 'save waits for a tap');
+  const bb = await p.locator('#chCv').boundingBox(); await p.mouse.click(bb.x + bb.width * 0.75, bb.y + bb.height * 0.15);
+  await p.click('#chSave'); await p.waitForTimeout(300);
+  assert(await p.isVisible('#tcRegen'), 'regenerate offered');
+  // moment: two frames later
+  await p.click('#tcChallenge'); await p.click('#chPick button[data-k="moment"]'); await p.waitForTimeout(300);
+  await p.click('#chFwd'); await p.click('#chFwd'); await p.waitForTimeout(200);
+  assert((await p.textContent('#chT')).includes('+2'), 'stepper shows +2 frames');
+  await p.click('#chSave'); await p.waitForTimeout(300);
+  // body
+  await p.click('#tcChallenge'); await p.click('#chPick button[data-k="body"]'); await p.waitForTimeout(300);
+  assert((await p.textContent('#tcRegenText')).startsWith('3 fixes'), await p.textContent('#tcRegenText'));
+  assert((await p.$$('#tcar figure[data-ph="top"] .fx.pend')).length === 3, 'top slide shows 3 waiting fixes');
+  const before = await p.evaluate(() => window.__swinglab.state.res.phases.top);
+  await p.evaluate(() => { const t = globalThis.__SWINGLAB_TEST.tracker, o = t.trackVideo; t.trackVideo = (u, opt) => { globalThis.__SWINGLAB_TEST.lastZoom = opt.zoom; return o.call(t, u, opt); }; });
+  await p.click('#tcRegenBtn');
+  await p.waitForFunction(() => { const L = window.__swinglab; return L.state.cur.status === 'done' && !L.state.processing && L.state.res?.fixed; }, null, { timeout: 30000 });
+  await p.waitForTimeout(500);
+  const r = await p.evaluate(() => { const L = window.__swinglab; return { top: L.state.res.phases.top, fixed: L.state.res.fixed, zoom: globalThis.__SWINGLAB_TEST.lastZoom, regenHidden: document.getElementById('tcRegen').hidden, done: document.querySelectorAll('#tcar figure[data-ph="top"] .fx:not(.pend)').length }; });
+  assert(Math.abs(r.top - before - 2 / 30) < 0.02, `top moved by the fix: ${before} -> ${r.top}`);
+  assert(r.fixed.club === 1 && r.fixed.phases.includes('top') && r.fixed.zoom, JSON.stringify(r.fixed));
+  assert(r.zoom && r.zoom.length === 1, 'tracker asked for the second look: ' + JSON.stringify(r.zoom));
+  assert(r.regenHidden && r.done === 3, 'fixes shown as applied: ' + JSON.stringify(r));
+  // remove them again
+  await p.click('#tcChallenge'); await p.click('#chRemove'); await p.waitForTimeout(300);
+  assert(await p.isVisible('#tcRegen') && (await p.textContent('#tcRegenText')) === 'Fixes removed', 'removal offers regenerate');
+  assert(p.errors.length === 0, 'errors: ' + p.errors.join(' | '));
+  await p.context().close();
+});
+
 await test('position carousel: arrows and dots step through the 9 positions; planes toggle on and off', async () => {
   const p = await newPage(); await upload(p);
   assert((await p.$$('#phaseChips button')).length === 9, 'dots');
@@ -432,7 +471,7 @@ await test('touch targets and layout: buttons ≥ 36 px tall, nothing wider than
   const p = await newPage(); await upload(p);
   const small = await p.$$eval('button:not(.kf button)', (bs) => bs.filter((b) => { const r = b.getBoundingClientRect(); return r.width > 0 && r.height < 36; }).map((b) => b.textContent.trim() || b.getAttribute('aria-label')));
   assert(small.length === 0, 'small buttons: ' + small.join(', '));
-  const wide = await p.$$eval('main *', (es) => es.filter((e) => e.getBoundingClientRect().right > 391 && getComputedStyle(e).overflowX !== 'auto' && !e.closest('.chips')).map((e) => e.tagName + '.' + e.className).slice(0, 5));
+  const wide = await p.$$eval('main *', (es) => es.filter((e) => e.getBoundingClientRect().right > 391 && getComputedStyle(e).overflowX !== 'auto' && !e.closest('.chips') && !e.closest('.tcar')).map((e) => e.tagName + '.' + e.className).slice(0, 5));
   assert(wide.length === 0, 'wider than screen: ' + wide.join(', '));
   await p.context().close();
 });

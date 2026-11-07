@@ -25,6 +25,12 @@ He swings left-handed. Proposal "A" (side drawer library) was the chosen UI.
    the ankles). **In-plane coordinates come from the 2D landmarks** (MediaPipe's most accurate output);
    only depth comes from the 3D world landmarks (smoothed harder). Lead ankle anchors the depth axis.
 4. Metrics → notes → main fault (each fault = measured / its threshold; largest ≥ 1 wins).
+5. **Tracking check + challenges** (app.js): carousel of the 9 phase stills with `youPose` projected back onto
+   the video (`projector`, uses `res.imgOrigin`). Challenges are saved on the session as `rec.fixes`
+   ([{ tImpact, phases:{ph:t}, club:[{ph,t,x,y}], body }], matched to swings by impact time ±0.6 s);
+   Regenerate = `processSession` with them: phase overrides + club anchors in `analyzeSwing(sw, meta, fix)`,
+   body → tracker `zoom` list = second mirrored look per frame averaged (crop instead when the golfer is small;
+   portrait clips are usually too full to crop). `rec.fixesApplied` = JSON of fixes at the last run.
 - Clubface is never claimed. Weight shift is only measured from face-on clips. Club = "estimated".
 
 ## Rules (carried over from Kiu / Snowline)
@@ -36,10 +42,10 @@ He swings left-handed. Proposal "A" (side drawer library) was the chosen UI.
 5. **Never commit swing videos or tracking dumps** (public repo). `.gitignore` blocks video files and `fixtures/`.
 
 ## Tests
-- `node scripts/e2e.mjs` — 25 checks with a mock tracker (`scripts/mock-tracker.js` builds MediaPipe-shaped data
+- `node scripts/e2e.mjs` — 26 checks with a mock tracker (`scripts/mock-tracker.js` builds MediaPipe-shaped data
   from the rig: lefty/righty, down-the-line/face-on, no-swing, error, slow).
 - `node scripts/realrun.mjs <clip.webm> <outdir> [second.webm]` — the whole app on a real clip (local only).
-- `node scripts/track.mjs <clip> <out.json>` + `node scripts/analyze.js <out.json>` — tracker + core on real clips.
+- `node scripts/track.mjs <clip> <out.json> [impactTimes]` (3rd arg = re-track those swings with the second look) + `node scripts/analyze.js <out.json>` — tracker + core on real clips.
 - Headless Chromium can't decode HEVC (iPhone .mov) — convert test clips to VP9/H.264 first. Its GPU path is
   software-only, so test pages set `__FORCE_CPU`. Video seeking needs HTTP range requests (`scripts/serve.mjs`).
 

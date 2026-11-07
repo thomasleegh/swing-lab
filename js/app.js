@@ -207,11 +207,13 @@ async function processSession(id) {
     if (!blob) throw new Error('The video file is missing from storage. Delete this upload and add the video again.');
     url = URL.createObjectURL(blob);
     const { trackVideo, grabFrames } = TEST.tracker || await import('./tracker.js');
-    const tr = await trackVideo(url, { findSwings: Core.findSwings, onProgress: update, isCancelled: () => !state.processing || state.processing.id !== id });
+    const fixes = rec.fixes || [], winFix = (tw) => fixes.find((f) => Math.abs(f.tImpact - tw) < 0.6) || null;
+    const tr = await trackVideo(url, { findSwings: Core.findSwings, onProgress: update, isCancelled: () => !state.processing || state.processing.id !== id, zoom: fixes.filter((f) => f.body).map((f) => f.tImpact) });
     const swings = [], failures = [];
     tr.swings.forEach((sw, i) => {
       let a;
-      try { a = Core.analyzeSwing(sw, tr.meta); } catch (e) { a = { ok: false, reason: `${e.name || 'Error'}: ${e.message || e}${e.stack ? ' @ ' + String(e.stack).split('\n').slice(0, 2).join(' | ') : ''}` }; }
+      const fx = winFix(sw.tImpact);
+      try { a = Core.analyzeSwing(sw, tr.meta, fx ? { phases: fx.phases, club: fx.club, zoom: fx.body } : null); if (a.ok) { a.tWin = sw.tImpact; if (sw.boosted) a.boosted = sw.boosted; } } catch (e) { a = { ok: false, reason: `${e.name || 'Error'}: ${e.message || e}${e.stack ? ' @ ' + String(e.stack).split('\n').slice(0, 2).join(' | ') : ''}` }; }
       if (a.ok) swings.push(slim(a)); else failures.push(`Swing ${i + 1}: ${a.reason}`);
     });
     const diag = { delegate: tr.meta.delegate, video: `${tr.meta.vw}×${tr.meta.vh}`, processed: `${tr.meta.W}×${tr.meta.H}`, duration: Math.round(tr.meta.duration * 10) / 10,
@@ -219,13 +221,14 @@ async function processSession(id) {
       with3D: tr.swings.reduce((n, s) => n + s.frames.filter((f) => f.wl).length, 0), ua: navigator.userAgent.replace(/^Mozilla\/5\.0 /, '').slice(0, 120), failures };
     update({ stage: 'frames', frac: 0.96 });
     for (let s = 0; s < swings.length; s++) {
-      const times = KEYFRAMES.map((k) => swings[s].phases[k]);
+      const times = Core.PH.map((k) => swings[s].phases[k]);
       const { blobs, W, H } = await grabFrames(tr.video, times);
       swings[s].frameSize = [W, H];
-      for (let i = 0; i < KEYFRAMES.length; i++) if (blobs[i]) await store.putFrame(`${id}:${s}:${KEYFRAMES[i]}`, blobs[i]);
+      for (let i = 0; i < Core.PH.length; i++) if (blobs[i]) await store.putFrame(`${id}:${s}:${Core.PH[i]}`, blobs[i]);
     }
     tr.video.remove();
     const summary = Core.summarize(swings);
+    rec.fixesApplied = JSON.stringify(fixes);
     Object.assign(rec, { status: 'done', progress: 1, progressText: 'Done', swings, summary, diag, meta: { duration: tr.meta.duration, delegate: tr.meta.delegate, found: tr.swings.length }, note: tr.swings.length && !swings.length ? 'Swings were found but you were not tracked clearly enough. Try a brighter clip with your whole body in frame.' : null });
     delete thumbURLs[id];
     await store.putSession(rec);
@@ -250,7 +253,7 @@ function friendly(msg) {
 }
 // keep only what the UI needs (landmarks only on keyframes)
 function slim(a) {
-  const keep = new Set(KEYFRAMES.map((k) => a.idx[k]));
+  const keep = new Set(Core.PH.map((k) => a.idx[k]));
   const frames = a.frames.map((f, i) => ({ t: f.t, j: f.j, club: { dir: f.club.dir.map((x) => Math.round(x * 1000) / 1000), ang: f.club.ang, conf: Math.round(f.club.conf * 10) / 10 }, lm: keep.has(i) ? f.lm : undefined }));
   return { ...a, frames };
 }
@@ -275,7 +278,7 @@ function loadSwing(i) {
   state.paths = buildPaths();
   state.t = clampT(state.t || r.phases.transition);
   if (state.t <= state.tStart || state.t >= state.tEnd) state.t = r.phases[r.mainFault?.phase || 'top'];
-  renderSwingChips(); renderPhaseChips(); setTimeout(syncFab, 0); renderTags(); renderKeyframes(); renderMetrics(); renderGhostBar();
+  renderSwingChips(); renderPhaseChips(); setTimeout(syncFab, 0); renderTags(); renderTrackCheck(); renderKeyframes(); renderMetrics(); renderGhostBar();
   $('dtlNote').textContent = r.view === 'dtl' ? 'tracked from your video' : 'rebuilt from your face-on video';
   $('foNote').textContent = r.view === 'faceon' ? 'tracked from your video' : 'rebuilt from your down-the-line video';
   $('foCap').textContent = r.view === 'faceon' ? 'Bars show pressure on the lead foot: ideal and yours (estimated from hip position).' : 'Bar shows the ideal pressure on the lead foot. Your weight shift needs a face-on video to measure.';
@@ -490,6 +493,171 @@ async function openKeyframe(ph) {
   const img = await loadImg(`${s.id}:${state.swingIdx}:${ph}`);
   requestAnimationFrame(() => drawMarkup($('dlgCv'), markupFor(r, ph, img)));
 }
+
+// ---------- tracking check: your figure drawn on your own video, and challenges ----------
+// Fixes live on the session (rec.fixes), one entry per swing matched by its impact time:
+// { tImpact, phases: { top: t }, club: [{ t, x, y }], body: bool }. Regenerate = re-run analysis with them.
+const tc = { idx: 0, vid: null, work: null, gen: 0 };
+const TSEGS = [['lToe', 'lAnk'], ['lAnk', 'lKnee'], ['lKnee', 'lHip'], ['tToe', 'tAnk'], ['tAnk', 'tKnee'], ['tKnee', 'tHip'], ['lHip', 'tHip'], ['P', 'neck'], ['lSh', 'tSh'], ['lSh', 'lElb'], ['lElb', 'H'], ['tSh', 'tElb'], ['tElb', 'tHand']];
+const swingKey = (r) => r.tWin ?? r.phases.impact;
+function fixFor(s, r, create) {
+  s.fixes = s.fixes || [];
+  let f = s.fixes.find((x) => Math.abs(x.tImpact - swingKey(r)) < 0.6);
+  if (!f && create) { f = { tImpact: swingKey(r), phases: {}, club: [], body: false }; s.fixes.push(f); }
+  return f || null;
+}
+const fixCount = (s) => (s.fixes || []).reduce((n, f) => n + Object.keys(f.phases).length + f.club.length + (f.body ? 1 : 0), 0);
+const fixPending = (s) => JSON.stringify(s.fixes || []) !== (s.fixesApplied || '[]');
+// canonical metres -> pixels of a W×H still of the video (same mapping the analysis used, inverted)
+function projector(r, W, H) {
+  const k = r.pxPerM, sx = W / r.imgW, sy = H / r.imgH, dtl = r.view === 'dtl', side = dtl ? r.ballSide : r.targetSide, c = dtl ? 2 : 0;
+  let o = r.imgOrigin;
+  if (!o) { // older uploads: fit the origin from the frames that kept their 2D points
+    let ax = 0, ay = 0, n = 0;
+    for (const f of r.frames) { if (!f.lm) continue; const g = Core.gripN(f.lm); ax += g[0] * r.imgW - side * f.j.H[c] * k; ay += g[1] * r.imgH + f.j.H[1] * k; n++; }
+    o = n ? [ax / n, ay / n] : [r.imgW / 2, r.imgH * 0.9];
+  }
+  return (p) => [(o[0] + side * p[c] * k) * sx, (o[1] - p[1] * k) * sy];
+}
+function drawTracked(cv, img, r, t, extra = {}) {
+  const [W, H] = img ? [img.naturalWidth, img.naturalHeight] : (r.frameSize || [540, 960]);
+  const P = projector(r, W, H), q = Core.youPose(r, t), k = r.pxPerM * W / r.imgW;
+  const pts = Object.keys(q).filter((x) => x !== 'look').map((x) => P(q[x]));
+  let x0 = Math.min(...pts.map((p) => p[0])), x1 = Math.max(...pts.map((p) => p[0])), y0 = Math.min(...pts.map((p) => p[1])), y1 = Math.max(...pts.map((p) => p[1]));
+  const px = (x1 - x0) * 0.14 + 16, py = (y1 - y0) * 0.08 + 16; x0 -= px; x1 += px; y0 -= py; y1 += py;
+  let cw = x1 - x0, ch = y1 - y0; if (cw / ch > 0.75) { const nh = cw / 0.75; y0 -= (nh - ch) / 2; ch = nh; } else { const nw = ch * 0.75; x0 -= (nw - cw) / 2; cw = nw; }
+  if (cw > W) { ch *= W / cw; cw = W; } if (ch > H) { cw *= H / ch; ch = H; }
+  const cx = Math.min(Math.max(x0 + cw / 2, cw / 2), W - cw / 2), cy = Math.min(Math.max(y0 + ch / 2, ch / 2), H - ch / 2);
+  const fx0 = cx - cw / 2, fy0 = cy - ch / 2;
+  const dpr = Math.min(2, window.devicePixelRatio || 1), cssW = cv.getBoundingClientRect().width || 340;
+  cv.width = Math.round(cssW * dpr); cv.height = Math.round(cv.width * 4 / 3);
+  const sc = cv.width / cw, ctx = cv.getContext('2d');
+  cv._map = { fx0, fy0, s: cw / cv.width, W, H };
+  ctx.fillStyle = '#1b2723'; ctx.fillRect(0, 0, cv.width, cv.height);
+  if (img) ctx.drawImage(img, fx0, fy0, cw, ch, 0, 0, cv.width, cv.height);
+  const T = (p) => [(p[0] - fx0) * sc, (p[1] - fy0) * sc], lw = Math.max(2, k * sc * 0.022), you = css('--you');
+  const line = (a, b, w) => { const A = T(a), B = T(b); ctx.beginPath(); ctx.moveTo(A[0], A[1]); ctx.lineTo(B[0], B[1]); ctx.lineWidth = w + 2.5; ctx.strokeStyle = 'rgba(0,0,0,.55)'; ctx.stroke(); ctx.lineWidth = w; ctx.strokeStyle = you; ctx.stroke(); };
+  ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+  for (const [a, b] of TSEGS) line(P(q[a]), P(q[b]), lw);
+  line(P(q.H), P(q.club), lw * 0.5);
+  const hc = T(P(q.head)), hr = 0.11 * k * sc;
+  ctx.beginPath(); ctx.arc(hc[0], hc[1], hr, 0, Math.PI * 2); ctx.lineWidth = lw + 2.5; ctx.strokeStyle = 'rgba(0,0,0,.55)'; ctx.stroke(); ctx.lineWidth = lw; ctx.strokeStyle = you; ctx.stroke();
+  const ch2 = T(P(q.club)); ctx.beginPath(); ctx.arc(ch2[0], ch2[1], lw * 1.1, 0, Math.PI * 2); ctx.fillStyle = you; ctx.fill();
+  if (extra.tap) { // the clubhead the user tapped, and the shaft it implies
+    const tp = [extra.tap.x * W, extra.tap.y * H], g = P(q.H), A = T(g), B = T(tp);
+    ctx.setLineDash([lw * 2, lw * 1.5]); ctx.beginPath(); ctx.moveTo(A[0], A[1]); ctx.lineTo(B[0], B[1]); ctx.lineWidth = lw * 0.8; ctx.strokeStyle = css('--plane2'); ctx.stroke(); ctx.setLineDash([]);
+    ctx.beginPath(); ctx.arc(B[0], B[1], lw * 2.2, 0, Math.PI * 2); ctx.lineWidth = lw; ctx.stroke();
+  }
+}
+async function openVideo(s) {
+  const T = TEST.tracker || await import('./tracker.js'), blob = await store.getVideo(s.id); if (!blob) return null;
+  const url = URL.createObjectURL(blob), v = T.loadVideo ? await T.loadVideo(url) : { remove() {}, mock: true };
+  return { T, v, url, close() { try { v.remove(); } catch (e) {} URL.revokeObjectURL(url); } };
+}
+async function frameAt(o, t) { const { blobs } = await o.T.grabFrames(o.v, [t]); if (!blobs[0]) return null; const img = new Image(); img.src = URL.createObjectURL(blobs[0]); try { await img.decode(); } catch (e) { return null; } return img; }
+async function ensureFrames(s, si, r) { // older uploads only stored 6 keyframes: grab the rest from the saved video once
+  const miss = []; for (const ph of Core.PH) { const key = `${s.id}:${si}:${ph}`; if (!state.imgs[key] && !(await store.getFrame(key))) miss.push(ph); }
+  if (!miss.length) return;
+  const o = await openVideo(s); if (!o) return;
+  try { const { blobs } = await o.T.grabFrames(o.v, miss.map((ph) => r.phases[ph])); for (let i = 0; i < miss.length; i++) if (blobs[i]) await store.putFrame(`${s.id}:${si}:${miss[i]}`, blobs[i]); } catch (e) {} finally { o.close(); }
+}
+function fixLabels(f, r, ph) {
+  const out = []; if (!f) return out;
+  if (f.phases[ph] != null) out.push('Moment');
+  if (f.club.some((c) => c.ph === ph)) out.push('Club');
+  if (f.body) out.push('Body');
+  return out;
+}
+async function renderTrackCheck() {
+  const box = $('tcar'), r = state.res, s = state.cur, si = state.swingIdx, gen = ++tc.gen;
+  box.textContent = '';
+  const f = fixFor(s, r, false), pend = fixPending(s);
+  const cvs = Core.PH.map((ph) => {
+    const cv = el('canvas', { role: 'img', 'aria-label': `${PHASE_NAMES[ph]}: your tracked figure drawn on your video` });
+    const tags = fixLabels(f, r, ph).map((x) => el('span', { class: 'fx' + (pend ? ' pend' : '') }, `${x} ${pend ? 'fix waiting' : 'fixed by you'}`));
+    box.append(el('figure', { 'data-ph': ph }, cv, el('figcaption', {}, el('span', {}, PHASE_NAMES[ph]), ...tags)));
+    return cv;
+  });
+  tc.idx = Math.min(tc.idx, Core.PH.length - 1);
+  requestAnimationFrame(() => { box.scrollLeft = tc.idx * (box.clientWidth + 10); });
+  updTc(); renderRegen();
+  await ensureFrames(s, si, r);
+  Core.PH.forEach((ph, i) => loadImg(`${s.id}:${si}:${ph}`).then((img) => { if (gen === tc.gen && state.res === r) drawTracked(cvs[i], img, r, r.phases[ph]); }));
+}
+function updTc() { $('tcPos').textContent = `${PHASE_NAMES[Core.PH[tc.idx]]} · ${tc.idx + 1}/${Core.PH.length}`; $('tcPrev').disabled = tc.idx === 0; $('tcNext').disabled = tc.idx === Core.PH.length - 1; }
+function goTc(i) { const box = $('tcar'); tc.lock = performance.now() + 700; tc.idx = Math.max(0, Math.min(Core.PH.length - 1, i)); box.scrollTo({ left: tc.idx * (box.clientWidth + 10), behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' }); updTc(); }
+function renderRegen() {
+  const s = state.cur, n = fixCount(s), pend = fixPending(s), busy = !!state.processing;
+  $('tcRegen').hidden = !pend || busy;
+  $('tcRegenText').textContent = n ? `${n} fix${n > 1 ? 'es' : ''} waiting` : 'Fixes removed';
+}
+function chShow(work) { $('chPick').hidden = work; $('chWork').hidden = !work; }
+function openChallenge() {
+  const r = state.res, s = state.cur, ph = Core.PH[tc.idx], f = fixFor(s, r, false);
+  $('chTitle').textContent = `Challenge: ${PHASE_NAMES[ph]}`;
+  $('chRemove').hidden = !fixLabels(f, r, ph).length;
+  tc.work = null; chShow(false);
+  const d = $('chDlg'); if (!d.open) d.showModal();
+}
+async function startWork(kind) {
+  const r = state.res, ph = Core.PH[tc.idx], f = fixFor(state.cur, r, false);
+  const prevTap = f && f.club.find((c) => c.ph === ph);
+  tc.work = { kind, ph, t: f?.phases[ph] ?? r.phases[ph], tap: prevTap ? { x: prevTap.x, y: prevTap.y } : null };
+  chShow(true);
+  $('chStep').hidden = kind !== 'moment';
+  $('chHint').textContent = kind === 'moment' ? 'Step to the frame that really is this position, then save.' : 'Tap where the clubhead is in this picture, then save.';
+  if (kind === 'moment' && !tc.vid) tc.vid = await openVideo(state.cur);
+  drawWork();
+}
+async function drawWork() {
+  const w = tc.work, r = state.res, s = state.cur; if (!w) return;
+  let img;
+  if (w.kind === 'moment' && tc.vid) img = await frameAt(tc.vid, w.t);
+  else img = await loadImg(`${s.id}:${state.swingIdx}:${w.ph}`);
+  if (tc.work !== w) return;
+  drawTracked($('chCv'), img, r, w.kind === 'moment' ? w.t : r.phases[w.ph], { tap: w.tap });
+  const d = Math.round((w.t - r.phases[w.ph]) * 30);
+  $('chT').textContent = d === 0 ? 'as detected' : `${d > 0 ? '+' : ''}${d} frame${Math.abs(d) > 1 ? 's' : ''}`;
+  $('chSave').disabled = w.kind === 'club' && !w.tap;
+}
+async function saveFix(mut) {
+  const s = state.cur, f = fixFor(s, state.res, true); mut(f);
+  await store.putSession(s); $('chDlg').close(); renderTrackCheck();
+  toast('Saved. Tap Regenerate to apply your fixes.', 2600);
+}
+function closeChallenge() { tc.work = null; if (tc.vid) { tc.vid.close(); tc.vid = null; } }
+$('tcar').addEventListener('scroll', () => { if (performance.now() < (tc.lock || 0)) return; const box = $('tcar'), i = Math.round(box.scrollLeft / (box.clientWidth + 10)); if (i !== tc.idx) { tc.idx = Math.max(0, Math.min(Core.PH.length - 1, i)); updTc(); } }, { passive: true });
+$('tcPrev').addEventListener('click', () => goTc(tc.idx - 1));
+$('tcNext').addEventListener('click', () => goTc(tc.idx + 1));
+$('tcar').addEventListener('keydown', (e) => { if (e.key === 'ArrowLeft') { e.preventDefault(); goTc(tc.idx - 1); } if (e.key === 'ArrowRight') { e.preventDefault(); goTc(tc.idx + 1); } });
+$('tcChallenge').addEventListener('click', openChallenge);
+for (const b of document.querySelectorAll('#chPick button[data-k]')) b.addEventListener('click', () => {
+  const k = b.dataset.k;
+  if (k === 'body') saveFix((f) => { f.body = true; });
+  else startWork(k);
+});
+$('chRemove').addEventListener('click', () => { const r = state.res, ph = Core.PH[tc.idx]; saveFix((f) => { delete f.phases[ph]; f.club = f.club.filter((c) => c.ph !== ph); f.body = false; }); });
+$('chBack').addEventListener('click', () => { const w = tc.work, F = state.res.frames; if (!w) return; w.t = Math.max(F[0].t, w.t - 1 / 30); drawWork(); });
+$('chFwd').addEventListener('click', () => { const w = tc.work, F = state.res.frames; if (!w) return; w.t = Math.min(F[F.length - 1].t, w.t + 1 / 30); drawWork(); });
+$('chCv').addEventListener('click', (e) => {
+  const w = tc.work, cv = $('chCv'), m = cv._map; if (!w || w.kind !== 'club' || !m) return;
+  const rc = cv.getBoundingClientRect(), cx = (e.clientX - rc.left) * cv.width / rc.width, cy = (e.clientY - rc.top) * cv.height / rc.height;
+  w.tap = { x: Math.round((m.fx0 + cx * m.s) / m.W * 1e4) / 1e4, y: Math.round((m.fy0 + cy * m.s) / m.H * 1e4) / 1e4 }; drawWork();
+});
+$('chSave').addEventListener('click', () => {
+  const w = tc.work, r = state.res; if (!w) return;
+  if (w.kind === 'moment') {
+    const f0 = fixFor(state.cur, r, false);
+    if (Math.abs(w.t - r.phases[w.ph]) < 1e-3 && !(f0 && f0.phases[w.ph] != null)) { $('chDlg').close(); toast('No change: that is the frame already used.'); return; }
+    saveFix((f) => { f.phases[w.ph] = Math.round(w.t * 1e4) / 1e4; });
+  }
+  else if (w.tap) saveFix((f) => { f.club = f.club.filter((c) => c.ph !== w.ph).concat({ ph: w.ph, t: r.phases[w.ph], x: w.tap.x, y: w.tap.y }); });
+});
+$('chBackToPick').addEventListener('click', () => { tc.work = null; chShow(false); });
+$('chClose').addEventListener('click', () => $('chDlg').close());
+$('chDlg').addEventListener('close', closeChallenge);
+$('chDlg').addEventListener('click', (e) => { if (e.target === $('chDlg')) $('chDlg').close(); });
+$('tcRegenBtn').addEventListener('click', () => { const id = state.cur?.id; if (!id) return; $('tcRegen').hidden = true; processSession(id); });
 
 // ---------- compare ----------
 async function startCompare(otherId) {

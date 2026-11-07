@@ -55,7 +55,7 @@ function findSwings(coarse, duration) {
 }
 
 // ---------- 2. club angle path (dynamic programming over 2-degree bins) ----------
-function clubPath(frames, hint) {
+function clubPath(frames, hint, anchors = []) {
   const n = frames.length; if (!n) return [];
   const D = new Float32Array(NANG * NANG);
   for (let a = 0; a < NANG; a++) for (let b = 0; b < NANG; b++) { const d = Math.abs(a - b) * 2; D[a * NANG + b] = Math.min(d, 360 - d); }
@@ -65,6 +65,8 @@ function clubPath(frames, hint) {
       const d = Math.abs(k * 2 - hint[i]); const dd = Math.min(d, 360 - d);
       s += Math.max(0, 14 - dd * 0.35);
     }
+    for (const an of anchors) { const di = Math.abs(i - an.i); if (di > 3) continue;
+      const d = Math.abs(k * 2 - an.ang), dd = Math.min(d, 360 - d); s += (di === 0 ? 120 : 60 / di) * Math.max(0, 1 - dd / 40) - (di === 0 ? 0.5 * dd : 0); }
     return s;
   };
   let cost = new Float32Array(NANG); for (let k = 0; k < NANG; k++) cost[k] = -score(0, k);
@@ -87,7 +89,9 @@ function clubPath(frames, hint) {
 }
 
 // ---------- 3. full analysis of one swing ----------
-function analyzeSwing(sw, meta) {
+function analyzeSwing(sw, meta, fix = null) {
+  // fix (from the user's challenges): { phases: { top: t, … }, club: [{ t, x, y }] (clubhead tapped, normalised image) }
+  const fixPh = (fix && fix.phases) || {};
   // Some phones return the 2D body points without the 3D ones: rebuild 3D from 2D (depth flattened) so the
   // swing can still be analysed. In-plane positions come from 2D anyway; only depth is lost.
   const withLm = sw.frames.filter((f) => f.lm), withWl = withLm.filter((f) => f.wl && f.wl.length === 33);
@@ -160,11 +164,15 @@ function analyzeSwing(sw, meta) {
   if (iAddr < 0) iAddr = Math.max(0, iTop - 30);
   // walk forward to the last still frame before the takeaway
   while (iAddr + 1 < iTop && speed[iAddr + 1] < 0.25) iAddr++;
+  const ovr = (ph, i) => fixPh[ph] != null ? nearestIdx(T, fixPh[ph]) : i;
+  iTop = ovr('top', iTop); iAddr = Math.min(ovr('address', iAddr), iTop - 2);
   const hA = handY[iAddr], hTop = handY[iTop], pA = handPos[iAddr];
   let iImp = iTop + 1, bestD = Infinity;
   for (let i = iTop + 1; i < Math.min(n, iTop + 22); i++) { const d = V.len(V.sub(handPos[i], pA)); if (handY[i] < hA + 0.25 && d < bestD) { bestD = d; iImp = i; } }
+  iImp = Math.max(iTop + 1, ovr('impact', iImp));
   let iFin = Math.min(n - 1, iImp + 40);
   for (let i = iImp + 9; i < Math.min(n, iImp + 45); i++) if (speed[i] < 0.5) { iFin = i; break; }
+  iFin = Math.max(iImp + 1, ovr('finish', iFin));
   const hImp = handY[iImp], hFin = Math.max(...handY.slice(iImp, iFin + 1));
   const firstAfter = (from, to, pred) => { for (let i = from; i <= to; i++) if (pred(i)) return i; return Math.round((from + to) / 2); };
   // takeaway (club about parallel to the ground): ~40% of the backswing time, or earlier if the hands are already rising
@@ -174,7 +182,7 @@ function analyzeSwing(sw, meta) {
   const iTrans = firstAfter(iTop, iImp, (i) => handY[i] <= hTop - 0.35 * (hTop - hImp));
   const iDel = firstAfter(iTrans, iImp, (i) => handY[i] <= hImp + 0.22 * (hTop - hImp));
   const iRel = firstAfter(iImp, iFin, (i) => handY[i] >= hImp + 0.25 * (hFin - hImp));
-  const idx = { address: iAddr, takeaway: iTake, p3: iP3, top: iTop, transition: iTrans, delivery: iDel, impact: iImp, release: iRel, finish: iFin };
+  const idx = { address: iAddr, takeaway: ovr('takeaway', iTake), p3: ovr('p3', iP3), top: iTop, transition: ovr('transition', iTrans), delivery: ovr('delivery', iDel), impact: iImp, release: ovr('release', iRel), finish: iFin };
   const phases = {}; for (const k of PH) phases[k] = T[idx[k]];
   if (!(iAddr < iTake && iTake <= iP3 && iP3 < iTop && iTop < iTrans && iTrans <= iDel && iDel < iImp && iImp < iRel && iRel <= iFin)) {
     // keep going, but flag it: the positions are approximate
@@ -222,7 +230,12 @@ function analyzeSwing(sw, meta) {
     const g = gripN(f.lm); const a = Math.atan2(ballPx[1] - g[1] * H, ballPx[0] - g[0] * W) * 180 / Math.PI;
     return (a + 360) % 360;
   });
-  cp = clubPath(clubFrames, hint);
+  // clubhead points the user tapped: pin the shaft angle at those frames
+  const anchors = ((fix && fix.club) || []).map((c) => {
+    const i = nearestIdx(T, c.t), f = raw[i]; if (!f || !f.lm) return null;
+    const g = gripN(f.lm); return { i, ang: ((Math.atan2((c.y - g[1]) * H, (c.x - g[0]) * W) * 180 / Math.PI) + 360) % 360 };
+  }).filter(Boolean);
+  cp = clubPath(clubFrames, hint, anchors);
   const club = cp.map((c, i) => {
     const a = c.ang * Math.PI / 180, u = Math.cos(a), v = Math.sin(a);
     const ideal = idealAt(phases, T[i]).C;
@@ -243,7 +256,8 @@ function analyzeSwing(sw, meta) {
   const out = raw.map((f, i) => ({ t: T[i], j: roundJoints(joints[i]), club: club[i], lm: f.lm }));
   const res = {
     ok: true, view, handed, ballSide, targetSide, phases, idx, pxPerM, stature: round2(stature),
-    ballPx, imgW: W, imgH: H, frames: out, approx: !!phases._approx, depthFlat: flat,
+    ballPx, imgW: W, imgH: H, imgOrigin: [originX, groundY], frames: out, approx: !!phases._approx, depthFlat: flat,
+    fixed: fix ? { phases: Object.keys(fixPh), club: ((fix && fix.club) || []).length, zoom: !!fix.zoom } : null,
   };
   delete phases._approx;
   res.metrics = measure(res);

@@ -9,7 +9,8 @@ window.__out = { done: false, err: null, progress: [] };
 try {
   const blob = await (await fetch(qs.get('file'))).blob();
   const url = URL.createObjectURL(blob);
-  const r = await trackVideo(url, { base: '..', findSwings: Core.findSwings, onProgress: (p) => window.__out.progress.push(p) });
+  const zoom = (qs.get('zoom') || '').split(',').filter(Boolean).map(Number);
+  const r = await trackVideo(url, { base: '..', findSwings: Core.findSwings, onProgress: (p) => window.__out.progress.push(p), zoom });
   r.video.remove();
   window.__out.result = { meta: r.meta, coarse: r.coarse, swings: r.swings };
 } catch (e) { window.__out.err = String(e && e.stack || e); }

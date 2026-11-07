@@ -133,7 +133,9 @@ function toGray(ctx, W, H) {
 }
 
 // ---------- main entry ----------
-export async function trackVideo(url, { onProgress = () => {}, base = '.', findSwings, isCancelled = () => false } = {}) {
+// zoom: impact times of swings the user said were tracked badly ("Body is off"): those swings are re-tracked on a
+// crop around the golfer (more pixels on the body), and the points mapped back to the full frame.
+export async function trackVideo(url, { onProgress = () => {}, base = '.', findSwings, isCancelled = () => false, zoom = [] } = {}) {
   const pl = await getLandmarker(base);
   const v = await loadVideo(url);
   try {
@@ -166,20 +168,68 @@ export async function trackVideo(url, { onProgress = () => {}, base = '.', findS
     for (let s = 0; s < windows.length; s++) {
       const w = windows[s], frames = [];
       const n = Math.ceil((w.t1 - w.t0) * FINE_FPS);
+      const boosted = zoom.some((z) => Math.abs(z - w.tImpact) < 0.6);
+      const crop = boosted ? cropFor(coarse, w, vw, vh) : null;
+      const mc = boosted && !crop ? mkCanvas(W, H) : null, mx = mc ? mc.getContext('2d') : null;
+      const zc = crop ? mkCanvas(crop.CW, crop.CH) : null, zx = crop ? zc.getContext('2d', { willReadFrequently: true }) : null;
       for (let i = 0; i <= n; i++) {
         if (isCancelled()) throw new Error('cancelled');
         const t = w.t0 + i / FINE_FPS;
-        await seek(v, t); ctx.drawImage(v, 0, 0, W, H);
-        const { lm, wl } = landmarkArrays(await detectSafe(c, base));
-        const sc = lm ? clubScores(toGray(ctx, W, H), W, H, lm) : new Float32Array(NANG);
+        await seek(v, t);
+        let lm, wl, sc;
+        if (crop) {
+          zx.drawImage(v, crop.sx, crop.sy, crop.sw, crop.sh, 0, 0, crop.CW, crop.CH);
+          ({ lm, wl } = landmarkArrays(await detectSafe(zc, base)));
+          sc = lm ? clubScores(toGray(zx, crop.CW, crop.CH), crop.CW, crop.CH, lm) : new Float32Array(NANG);
+          if (lm) lm = lm.map((p) => [round((crop.sx + p[0] * crop.sw) / vw, 4), round((crop.sy + p[1] * crop.sh) / vh, 4), round(p[2] * crop.sw / vw, 4), p[3]]);
+        } else {
+          ctx.drawImage(v, 0, 0, W, H);
+          ({ lm, wl } = landmarkArrays(await detectSafe(c, base)));
+          if (boosted) { // second look on the mirrored frame, mapped back and averaged (weighted by visibility)
+            mx.save(); mx.setTransform(-1, 0, 0, 1, W, 0); mx.drawImage(v, 0, 0, W, H); mx.restore();
+            const m = landmarkArrays(await detectSafe(mc, base));
+            ({ lm, wl } = mergeMirrored(lm, wl, m.lm, m.wl));
+          }
+          sc = lm ? clubScores(toGray(ctx, W, H), W, H, lm) : new Float32Array(NANG);
+        }
         frames.push({ t: round(t, 4), lm, wl, sc: Array.from(sc, (x) => Math.round(x * 10) / 10) });
         doneFine++;
         if (doneFine % 3 === 0) report('track', 0.35 + 0.6 * doneFine / totalFine, { found: windows.length, swing: s + 1 });
       }
-      swings.push({ t0: w.t0, t1: w.t1, tImpact: w.tImpact, frames });
+      swings.push({ t0: w.t0, t1: w.t1, tImpact: w.tImpact, frames, boosted: boosted ? (crop ? 'zoom' : 'mirror') : null });
     }
     return { meta: { duration: dur, W, H, vw, vh, delegate: landmarkerDelegate }, coarse, swings, video: v, canvas: c };
   } catch (e) { v.remove(); throw e; }
+}
+
+// Crop (source pixels) around the golfer for one swing window, from the coarse pass: the body box widened by
+// most of a body height on the sides and above (the club), same aspect as the video.
+function cropFor(coarse, w, vw, vh) {
+  let x0 = 1, y0 = 1, x1 = 0, y1 = 0, got = 0;
+  for (const f of coarse) { if (!f.lm || f.t < w.t0 - 0.5 || f.t > w.t1 + 0.5) continue; got++;
+    for (const p of f.lm) { if ((p[3] ?? 1) < 0.3) continue; x0 = Math.min(x0, p[0]); x1 = Math.max(x1, p[0]); y0 = Math.min(y0, p[1]); y1 = Math.max(y1, p[1]); } }
+  if (!got || x1 <= x0) return null;
+  const bh = (y1 - y0) * vh;
+  let sx = x0 * vw - 0.6 * bh, ex = x1 * vw + 0.6 * bh, sy = y0 * vh - 0.5 * bh, ey = y1 * vh + 0.12 * bh;
+  // match the video's aspect so the body isn't squashed, then clamp to the frame
+  const asp = vw / vh; let cw = ex - sx, ch = ey - sy;
+  if (cw / ch > asp) { const nh = cw / asp; sy -= (nh - ch) / 2; ch = nh; } else { const nw = ch * asp; sx -= (nw - cw) / 2; cw = nw; }
+  if (cw >= vw * 0.92) return null; // already fills the frame: nothing to gain
+  sx = Math.max(0, Math.min(vw - cw, sx)); sy = Math.max(0, Math.min(vh - ch, sy));
+  const CW = Math.min(PROC_W, Math.round(cw * 2)), CH = Math.round(CW * ch / cw);
+  return { sx, sy, sw: cw, sh: ch, CW, CH };
+}
+
+// Mirror pass: x flips and MediaPipe's left/right labels swap. Average the two looks per point.
+const SWAP = (() => { const m = [...Array(33).keys()]; for (const [a, b] of [[1, 4], [2, 5], [3, 6], [7, 8], [9, 10], [11, 12], [13, 14], [15, 16], [17, 18], [19, 20], [21, 22], [23, 24], [25, 26], [27, 28], [29, 30], [31, 32]]) { m[a] = b; m[b] = a; } return m; })();
+function mergeMirrored(lm, wl, mlm, mwl) {
+  if (!mlm) return { lm, wl }; 
+  const back = SWAP.map((j) => { const p = mlm[j]; return [1 - p[0], p[1], p[2], p[3]]; });
+  const wback = mwl ? SWAP.map((j) => { const p = mwl[j]; return [-p[0], p[1], p[2], p[3]]; }) : null;
+  if (!lm) return { lm: back, wl: wback };
+  const avg = (A, B) => A.map((a, i) => { const b = B[i], wa = Math.max(0.05, a[3] ?? 1), wb = Math.max(0.05, b[3] ?? 1), s = wa + wb;
+    return [round((a[0] * wa + b[0] * wb) / s, 4), round((a[1] * wa + b[1] * wb) / s, 4), round((a[2] * wa + b[2] * wb) / s, 4), round(Math.max(a[3] ?? 1, b[3] ?? 1), 3)]; });
+  return { lm: avg(lm, back), wl: wl && wback ? avg(wl, wback) : wl };
 }
 
 // Grab still frames (JPEG blobs) at given times for the keyframe cards.
