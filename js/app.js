@@ -264,7 +264,7 @@ function loadSwing(i) {
   state.res = r;
   state.tStart = Math.max(r.frames[0].t, r.phases.address - 0.3);
   state.tEnd = Math.min(r.frames[r.frames.length - 1].t, r.phases.finish + 0.7);
-  // both figures are the same rig (see Core.fitRig): same body, feet, ball and ground
+  // You = your tracked joints (Core.youPose) with the model's bone lengths; ideal = the model
   state.scale = 1; state.clubLen = Rig.CLUB_LEN;
   state.keys = Core.fitRig(r);
   const a = Rig.pose(Rig.sample(Rig.IDEAL, 0));
@@ -283,20 +283,27 @@ function loadSwing(i) {
   render();
 }
 function clampT(t) { return Math.max(state.tStart, Math.min(state.tEnd, t)); }
+// The view you filmed draws your tracked joints (Core.youPose). The other view can only be rebuilt (one camera
+// gives no reliable depth), so it uses the model fitted to your hand path and tilt (Core.youRigPose).
+const filmed = (res, vid) => (res.view === 'dtl') === (vid === 'dtl');
+function youFor(res, keys, t, vid) { return filmed(res, vid) ? Core.youPose(res, t) : Core.youRigPose(res, keys, t); }
 function buildPaths() {
-  const r = state.res, out = { you: [], ideal: [], ghost: [] };
+  const r = state.res, out = { dtl: { you: [], ideal: [], ghost: [] }, fo: { you: [], ideal: [], ghost: [] } };
   for (let t = state.tStart; t <= state.tEnd + 1e-6; t += 1 / 60) {
-    out.you.push({ t, p: Core.youRigPose(r, state.keys, t).club });
-    out.ideal.push({ t, p: Core.idealPose(r.phases, t, 1).club });
-    if (state.ghost) { const g = ghostAt(t); if (g) out.ghost.push({ t, p: g.club }); }
+    const qi = Core.idealPose(r.phases, t, 1).club;
+    for (const vid of ['dtl', 'fo']) {
+      out[vid].you.push({ t, p: youFor(r, state.keys, t, vid).club });
+      out[vid].ideal.push({ t, p: qi });
+      if (state.ghost) { const g = ghostAt(t, vid); if (g) out[vid].ghost.push({ t, p: g.club }); }
+    }
   }
   return out;
 }
-function ghostAt(t) {
+function ghostAt(t, vid) {
   const g = state.ghost; if (!g) return null;
   const tg = mapTime(state.res.phases, g.res.phases, t);
   if (!g.keys) g.keys = Core.fitRig(g.res);
-  return Core.youRigPose(g.res, g.keys, tg);
+  return youFor(g.res, g.keys, tg, vid);
 }
 function mapTime(pa, pb, t) {
   const ks = Core.PH;
@@ -313,16 +320,16 @@ function leadPct(q) { const a = q.lAnk[0], b = q.tAnk[0], p = (q.lHip[0] + q.tHi
 
 function render() {
   const r = state.res; if (!r || $('session').hidden) return;
-  const qYou = Core.youRigPose(r, state.keys, state.t);
   const qIdeal = Core.idealPose(r.phases, state.t, 1);
-  const qGhost = state.ghost ? ghostAt(state.t) : null;
+  const qFor = (vid) => ({ you: youFor(r, state.keys, state.t, vid), ideal: qIdeal, ghost: state.ghost ? ghostAt(state.t, vid) : null });
+  const qYou = Core.youPose(r, state.t);
   const s = {
-    q: { you: qYou, ideal: qIdeal, ghost: qGhost }, paths: state.paths, t: state.t, show: state.show, trace: state.trace,
+    q: null, paths: null, t: state.t, show: state.show, trace: state.trace,
     planes: state.planes, ball: state.ball, addr: state.addr, mirror: state.mirror, leadAnkleX: state.leadAnkleX, ballGone: state.t > r.phases.impact + 0.02,
     lead: { ideal: leadPct(qIdeal), you: r.view === 'faceon' ? leadPct(qYou) : null },
   };
-  drawView($('cvDtl'), 'dtl', s);
-  drawView($('cvFo'), 'fo', s);
+  drawView($('cvDtl'), 'dtl', { ...s, q: qFor('dtl'), paths: state.paths.dtl });
+  drawView($('cvFo'), 'fo', { ...s, q: qFor('fo'), paths: state.paths.fo });
   const ph = nearestPhase(state.t);
   $('phaseName').textContent = PHASE_NAMES[ph];
   const n = r.notes[ph];

@@ -302,23 +302,23 @@ await test('a finished upload can be analyzed again from the ⋯ menu and from t
   await p.context().close();
 });
 
-await test('"You" is the same rig as the ideal: identical at address, same feet, smooth motion (no jitter)', async () => {
+await test('"You" from your tracked joints: same body and spot as the ideal at address, feet planted, no jitter', async () => {
   const p = await newPage(); await upload(p);
   const r = await p.evaluate(() => {
     const st = window.__swinglab.state, res = st.res, C = window.Core;
-    const a = C.youRigPose(res, st.keys, res.phases.address), b = C.idealPose(res.phases, res.phases.address, 1);
+    const a = C.youPose(res, res.phases.address), b = C.idealPose(res.phases, res.phases.address, 1);
     let dAddr = 0; for (const k of ['H', 'neck', 'P', 'lAnk', 'tAnk', 'club']) for (let i = 0; i < 3; i++) dAddr = Math.max(dAddr, Math.abs(a[k][i] - b[k][i]));
     let feet = 0, jerk = 0, jerkI = 0, pv = [], pi = [];
     const acc = (h, k) => Math.max(...[0, 1, 2].map((i) => Math.abs(h[2][k][i] - 2 * h[1][k][i] + h[0][k][i])));
     for (let t = res.phases.address; t <= res.phases.finish; t += 1 / 60) {
-      const q = C.youRigPose(res, st.keys, t), qi = C.idealPose(res.phases, t, 1);
+      const q = C.youPose(res, t), qi = C.idealPose(res.phases, t, 1);
       feet = Math.max(feet, Math.abs(q.lAnk[2] - qi.lAnk[2]), Math.abs(q.lAnk[0] - qi.lAnk[0]));
       pv.push(q); pi.push(qi); if (pv.length > 3) { pv.shift(); pi.shift(); }
       if (pv.length === 3) for (const k of ['lKnee', 'tKnee', 'H', 'head']) { jerk = Math.max(jerk, acc(pv, k)); jerkI = Math.max(jerkI, acc(pi, k)); }
     }
     return { dAddr, feet, jerk, jerkI };
   });
-  assert(r.dAddr < 0.005, 'figures differ at address by ' + r.dAddr);
+  assert(r.dAddr < 0.08, 'figures differ at address by ' + r.dAddr); // You = tracked joints now, same body and spot
   assert(r.feet < 0.02, 'feet not on the same spot: ' + r.feet);
   assert(r.jerk <= r.jerkI * 2 + 0.002, `jerkier than the ideal model itself: ${r.jerk} vs ${r.jerkI}`);
   await p.context().close();
@@ -338,8 +338,8 @@ await test('tempo: ideal builds smoothly, rests at the top, speeds up to impact;
     for (const v of down) { best = Math.max(best, v); worstDrop = Math.max(worstDrop, (best - v) / Math.max(1e-6, best)); }
     // "You": hands follow the tracked hands in the camera's plane
     const F = res.frames, I = res.idx, inP = (h) => res.view === 'dtl' ? [h[1], h[2]] : [h[0], h[1]];
-    const hA = inP(F[I.address].j.H), H0 = inP(window.Rig.IDEAL[0].H); let err = 0, n = 0;
-    for (let i = I.address; i <= I.finish; i++) { const q = inP(C.youRigPose(res, st.keys, F[i].t).H), m = inP(F[i].j.H); err += (H0[0] + m[0] - hA[0] - q[0]) ** 2 + (H0[1] + m[1] - hA[1] - q[1]) ** 2; n++; }
+    let err = 0, n = 0;
+    for (let i = I.address; i <= I.finish; i++) { const q = inP(C.youPose(res, F[i].t).H), m = inP(F[i].j.H); err += (m[0] - q[0]) ** 2 + (m[1] - q[1]) ** 2; n++; }
     return { turns, peak, atTop, worstDrop, rms: Math.sqrt(err / n) };
   });
   assert(r.turns <= 1, 'ideal backswing surges/stalls: ' + r.turns + ' speed reversals');
@@ -353,8 +353,8 @@ await test('"You" head follows the tracked head through the finish (spine-tilt c
   const p = await newPage(); await upload(p);
   const worst = await p.evaluate(() => {
     const st = window.__swinglab.state, res = st.res, C = window.Core, F = res.frames, I = res.idx;
-    const e0 = F[I.address].j.ear, q0 = C.youRigPose(res, st.keys, F[I.address].t); let w = 0;
-    for (const ph of C.PH) { const f = F[I[ph]], q = C.youRigPose(res, st.keys, f.t);
+    const e0 = F[I.address].j.ear, q0 = C.youPose(res, F[I.address].t); let w = 0;
+    for (const ph of C.PH) { const f = F[I[ph]], q = C.youPose(res, f.t);
       w = Math.max(w, Math.hypot((f.j.ear[1] - e0[1]) - (q.head[1] - q0.head[1]), (f.j.ear[2] - e0[2]) - (q.head[2] - q0.head[2]))); }
     return w;
   });

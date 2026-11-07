@@ -69,6 +69,11 @@ He swings left-handed. Proposal "A" (side drawer library) was the chosen UI.
   change to the ideal's tilt *at that position* (double counted) → head thrown ~30 cm back at the finish; now based
   on the ideal's address tilt (head error 28–40 → 3–9 cm). (b) `drawFigure` drew the head and club last regardless of
   depth; now one depth-sorted list (limbs/shaft split into pieces, joints, head).
+- Nov 6 (evening): Thomas compared the figure with his video — knees, torso, turn and arm layout were the
+  textbook model's, not his (fitRig only carried hands/club/tilt/hip shift). Now the **filmed view draws his tracked
+  joints** (`Core.youPose`: tracked pelvis/spine/shoulder line/head/hands/club/knee+elbow directions, model bone
+  lengths, feet planted, light smoothing, video timing). Verified by projecting onto the video frames. The other
+  (rebuilt) view still uses `youRigPose` because single-camera depth is too noisy joint by joint.
 - Safari copies canvas-to-canvas lazily: each head gets its own scratch canvas (else heads show another view's face).
 
 ## Working style (user: Thomas)

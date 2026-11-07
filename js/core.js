@@ -658,7 +658,62 @@ function youRigPose(res, keys, t) {
   return R.pose(s);
 }
 
-const Core = { fitRig, youRigPose, findSwings, analyzeSwing, clubPath, idealPose, idealAt, idealTime, idealClock, youClock, youAt, measure, notesFor, summarize, planesImg, gripN, handHeight, spineTilt, PH, IDEAL_TEXT };
+// ---------- 10. "You" from your own tracked joints ----------
+// Every frame of your figure comes from your video: pelvis, spine, shoulder line, head, arms, legs and club are
+// your tracked positions/directions. Only bone LENGTHS are the model's (same body as the ideal), so limbs don't
+// stretch or shrink from tracking noise. Feet stay on the ground (heels may lift as tracked). Display-only
+// smoothing on top of the analysis smoothing; timing is the video's own.
+const youCache = new WeakMap();
+function youPoses(res) {
+  if (youCache.has(res)) return youCache.get(res);
+  const F = res.frames, n = F.length, keys = Object.keys(F[0].j);
+  // light Gaussian over time (σ ≈ 1 frame) for display
+  const J = F.map((_, i) => { const o = {}; for (const k of keys) { const a = [0, 0, 0]; let w = 0;
+    for (let d = -2; d <= 2; d++) { const jj = clamp(i + d, 0, n - 1), ww = Math.exp(-(d * d) / 2); const p = F[jj].j[k]; a[0] += p[0] * ww; a[1] += p[1] * ww; a[2] += p[2] * ww; w += ww; }
+    o[k] = [a[0] / w, a[1] / w, a[2] / w]; } return o; });
+  const CD = F.map((_, i) => { const a = [0, 0, 0]; for (let d = -1; d <= 1; d++) { const c = F[clamp(i + d, 0, n - 1)].club.dir, ww = d ? 1 : 2; a[0] += c[0] * ww; a[1] += c[1] * ww; a[2] += c[2] * ww; } return V.norm(a); });
+  const iA = res.idx.address, A = J[iA];
+  const mid = (a, b) => V.mul(V.add(a, b), 0.5), hz = (v) => V.norm([v[0], 0, v[2]]);
+  const a0L = A.lAnk[1], a0T = A.tAnk[1];
+  const poses = J.map((j, i) => {
+    const P = mid(j.lHip, j.tHip);
+    const hipAxis = hz(V.sub(j.lHip, j.tHip));
+    const lHip = V.add(P, V.mul(hipAxis, 0.13)), tHip = V.sub(P, V.mul(hipAxis, 0.13));
+    const shM = mid(j.lSh, j.tSh), d = V.norm(V.sub(shM, P));
+    const neck = V.add(P, V.mul(d, 0.52));
+    let e = V.sub(j.lSh, j.tSh); e = V.norm(V.sub(e, V.mul(d, V.dot(e, d))));
+    const lSh = V.add(neck, V.mul(e, 0.19)), tSh = V.sub(neck, V.mul(e, 0.19));
+    const hd = V.norm(V.sub(j.ear, shM)), headBase = V.add(neck, V.mul(hd, 0.17));
+    const look = V.norm(V.sub(j.nose, j.ear).map((x, k) => k === 1 ? x * 0.5 : x));
+    const head = V.add(headBase, V.mul(look, 0.05));
+    // hands: tracked grip, kept within reach of the lead shoulder
+    let H = j.H; { const v = V.sub(H, lSh), L = V.len(v); if (L > 0.6) H = V.add(lSh, V.mul(v, 0.6 / L)); }
+    const C = CD[i], tHand = V.add(H, V.mul(C, 0.05)), club = V.add(H, V.mul(C, R.CLUB_LEN));
+    const lElb = R.ik(lSh, H, 0.31, 0.3, V.sub(j.lElb, mid(lSh, H)));
+    const tElb = R.ik(tSh, tHand, 0.31, 0.3, V.sub(j.tElb, mid(tSh, tHand)));
+    // feet on the ground at the tracked spots; a heel only rises by what was tracked since address
+    const lAnk = [j.lAnk[0], 0.08 + Math.max(0, j.lAnk[1] - a0L), j.lAnk[2]];
+    const tAnk = [j.tAnk[0], 0.08 + Math.max(0, j.tAnk[1] - a0T), j.tAnk[2]];
+    const lKnee = R.ik(lHip, lAnk, 0.46, 0.46, V.sub(j.lKnee, mid(lHip, lAnk)));
+    const tKnee = R.ik(tHip, tAnk, 0.46, 0.46, V.sub(j.tKnee, mid(tHip, tAnk)));
+    const toe = (ank, tt, a0) => { const dd = hz(V.sub(tt, a0)); const t = V.add(ank, V.mul(dd, 0.16)); return [t[0], 0.02, t[2]]; };
+    return { t: F[i].t, q: { P, lHip, tHip, neck, lSh, tSh, head, look, H, tHand, club, lElb, tElb, lAnk, tAnk, lKnee, tKnee, lToe: toe(lAnk, j.lToe, j.lAnk), tToe: toe(tAnk, j.tToe, j.tAnk) } };
+  });
+  youCache.set(res, poses);
+  return poses;
+}
+function youPose(res, t) {
+  const L = youPoses(res), n = L.length;
+  if (t <= L[0].t) return L[0].q; if (t >= L[n - 1].t) return L[n - 1].q;
+  let i = 1; while (i < n - 1 && L[i].t < t) i++;
+  const u = clamp((t - L[i - 1].t) / Math.max(1e-6, L[i].t - L[i - 1].t), 0, 1), u2 = u * u, u3 = u2 * u;
+  const g = (k) => L[clamp(k, 0, n - 1)].q, p0 = g(i - 2), p1 = g(i - 1), p2 = g(i), p3 = g(i + 1), o = {};
+  for (const k in p1) o[k] = [0, 1, 2].map((a) => 0.5 * (2 * p1[k][a] + (p2[k][a] - p0[k][a]) * u + (2 * p0[k][a] - 5 * p1[k][a] + 4 * p2[k][a] - p3[k][a]) * u2 + (3 * p1[k][a] - p0[k][a] - 3 * p2[k][a] + p3[k][a]) * u3));
+  o.look = V.norm(o.look);
+  return o;
+}
+
+const Core = { fitRig, youRigPose, youPose, youPoses, findSwings, analyzeSwing, clubPath, idealPose, idealAt, idealTime, idealClock, youClock, youAt, measure, notesFor, summarize, planesImg, gripN, handHeight, spineTilt, PH, IDEAL_TEXT };
 if (typeof module !== 'undefined') module.exports = Core;
 if (typeof globalThis !== 'undefined') globalThis.Core = Core;
 })();
